@@ -9,55 +9,55 @@ on:
   workflow_call:
     inputs:
       version:
-        description: "Explicit version (e.g., 0.2.0) — overrides bump"
+        description: 'Explicit version (e.g., 0.2.0) — overrides bump'
         type: string
-        default: ""
+        default: ''
       bump:
-        description: "Version bump type (patch/minor/major)"
+        description: 'Version bump type (patch/minor/major)'
         type: string
-        default: "patch"
+        default: 'patch'
       dry_run:
-        description: "Build + test only, skip publish"
+        description: 'Build + test only, skip publish'
         type: boolean
         default: false
       system-deps:
-        description: "apt packages for build/test"
+        description: 'apt packages for build/test'
         type: string
-        default: ""
+        default: ''
       workspace:
-        description: "Workspace mode"
+        description: 'Workspace mode'
         type: boolean
         default: false
       workspace-crates:
-        description: "Space-separated crate names for workspace version patching"
+        description: 'Space-separated crate names for workspace version patching'
         type: string
-        default: ""
+        default: ''
       all-features:
-        description: "--all-features for build/test/clippy"
+        description: '--all-features for build/test/clippy'
         type: boolean
         default: true
       nextest:
-        description: "Use nextest for release validation"
+        description: 'Use nextest for release validation'
         type: boolean
         default: true
       cargo-update-flag:
-        description: "Flag for cargo update (-w or -p crate-name)"
+        description: 'Flag for cargo update (-w or -p crate-name)'
         type: string
-        default: "-w"
+        default: '-w'
       generate-release-notes:
-        description: "Generate + upload release notes artifact"
+        description: 'Generate + upload release notes artifact'
         type: boolean
         default: false
       generate-changelog:
-        description: "Update CHANGELOG.md via git-iris"
+        description: 'Update CHANGELOG.md via git-iris'
         type: boolean
         default: false
       cicd-workflow:
-        description: "Downstream workflow to trigger"
+        description: 'Downstream workflow to trigger'
         type: string
-        default: "cicd.yml"
+        default: 'cicd.yml'
       pass-run-id:
-        description: "Pass release_run_id to downstream"
+        description: 'Pass release_run_id to downstream'
         type: boolean
         default: false
 

@@ -7,27 +7,27 @@ on:
   workflow_call:
     inputs:
       release-notes-model:
-        description: "AI model for git-iris"
+        description: 'AI model for git-iris'
         type: string
-        default: "claude-sonnet-4-5-20250929"
+        default: 'claude-sonnet-4-5-20250929'
       release-notes-provider:
-        description: "LLM provider"
+        description: 'LLM provider'
         type: string
-        default: "anthropic"
+        default: 'anthropic'
       attach-artifacts:
-        description: "Download + attach build artifacts"
+        description: 'Download + attach build artifacts'
         type: boolean
         default: false
       artifact-pattern:
-        description: "Glob for which artifacts to attach"
+        description: 'Glob for which artifacts to attach'
         type: string
-        default: "*"
+        default: '*'
       release-notes-run-id:
-        description: "Use pre-generated notes from this run"
+        description: 'Use pre-generated notes from this run'
         type: string
-        default: ""
+        default: ''
       draft:
-        description: "Create as draft release"
+        description: 'Create as draft release'
         type: boolean
         default: false
 

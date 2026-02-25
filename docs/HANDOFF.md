@@ -1,7 +1,7 @@
 # Implementation Handoff — Shared Workflows
 
-Start here. This document tells you exactly how to build each reusable workflow,
-what inputs to parameterize, and how to migrate each consuming repo.
+Start here. This document tells you exactly how to build each reusable workflow, what inputs to
+parameterize, and how to migrate each consuming repo.
 
 **Prerequisite:** Read `AUDIT.md` for the raw data. This doc is the synthesis.
 
@@ -33,10 +33,11 @@ what inputs to parameterize, and how to migrate each consuming repo.
 
 ## How Reusable Workflows Work
 
-GitHub Actions reusable workflows use `workflow_call` as the trigger. The calling
-repo passes inputs and inherits secrets from the same org.
+GitHub Actions reusable workflows use `workflow_call` as the trigger. The calling repo passes inputs
+and inherits secrets from the same org.
 
 **Caller (consuming repo):**
+
 ```yaml
 name: CI/CD
 on:
@@ -54,6 +55,7 @@ jobs:
 ```
 
 **Callee (this repo):**
+
 ```yaml
 name: Rust CI
 on:
@@ -68,6 +70,7 @@ on:
 ```
 
 **Key constraints:**
+
 - Caller YAML must live in `.github/workflows/` — no subdirectories
 - `secrets: inherit` passes all org/repo secrets automatically
 - Callee can't trigger other workflows in the CALLER's repo
@@ -79,19 +82,19 @@ on:
 
 ## Workflow Catalog
 
-| Workflow | Phase | Consumers (Rust) | Consumers (Other) |
-|----------|-------|-------------------|--------------------|
-| `rust-ci.yml` | 1 | opaline, unifi-cli, git-iris, silkprint | — |
-| `rust-publish.yml` | 1 | opaline, unifi-cli, git-iris, silkprint | — |
-| `rust-release.yml` | 1 | opaline, unifi-cli, git-iris, silkprint | — |
-| `rust-build-artifacts.yml` | 1 | unifi-cli, git-iris | — |
-| `docs-deploy.yml` | 2 | opaline, unifi-cli, git-iris | sibyl, droidmind, uchroma, dotfiles |
-| `github-release.yml` | 2 | opaline, unifi-cli, git-iris, silkprint | droidmind, signalrgb-ha |
-| `homebrew-update.yml` | 2 | unifi-cli, git-iris | — |
-| `docker-publish.yml` | 2 | git-iris | droidmind |
-| `python-ci.yml` | 3 | — | droidmind, sibyl, uchroma, signalrgb-ha, haven, prezzer |
-| `python-publish.yml` | 3 | — | droidmind, sibyl, uchroma, signalrgb-ha |
-| `moon-ci.yml` | 4 | — | haven, prezzer |
+| Workflow                   | Phase | Consumers (Rust)                        | Consumers (Other)                                       |
+| -------------------------- | ----- | --------------------------------------- | ------------------------------------------------------- |
+| `rust-ci.yml`              | 1     | opaline, unifi-cli, git-iris, silkprint | —                                                       |
+| `rust-publish.yml`         | 1     | opaline, unifi-cli, git-iris, silkprint | —                                                       |
+| `rust-release.yml`         | 1     | opaline, unifi-cli, git-iris, silkprint | —                                                       |
+| `rust-build-artifacts.yml` | 1     | unifi-cli, git-iris                     | —                                                       |
+| `docs-deploy.yml`          | 2     | opaline, unifi-cli, git-iris            | sibyl, droidmind, uchroma, dotfiles                     |
+| `github-release.yml`       | 2     | opaline, unifi-cli, git-iris, silkprint | droidmind, signalrgb-ha                                 |
+| `homebrew-update.yml`      | 2     | unifi-cli, git-iris                     | —                                                       |
+| `docker-publish.yml`       | 2     | git-iris                                | droidmind                                               |
+| `python-ci.yml`            | 3     | —                                       | droidmind, sibyl, uchroma, signalrgb-ha, haven, prezzer |
+| `python-publish.yml`       | 3     | —                                       | droidmind, sibyl, uchroma, signalrgb-ha                 |
+| `moon-ci.yml`              | 4     | —                                       | haven, prezzer                                          |
 
 ---
 
@@ -103,19 +106,19 @@ The highest-value workflow. Replaces 60-100 lines in each Rust project with ~15.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `change-detection` | boolean | `true` | Enable dorny/paths-filter gating |
-| `change-filters` | string | `''` | Extra path filters (YAML, appended to defaults) |
-| `system-deps` | string | `''` | apt packages to install (e.g., `libdbus-1-dev pkg-config lld`) |
-| `workspace` | boolean | `false` | Use `--workspace` flag on cargo commands |
-| `all-features` | boolean | `true` | Use `--all-features` flag |
-| `all-targets` | boolean | `true` | Use `--all-targets` for clippy |
-| `nextest` | boolean | `true` | Use cargo-nextest (falls back to cargo test if false) |
-| `cargo-deny` | boolean | `true` | Run cargo-deny audit |
-| `nightly-fmt` | boolean | `false` | Use nightly toolchain for rustfmt |
-| `extra-clippy-args` | string | `''` | Additional clippy arguments |
-| `rust-toolchain` | string | `'stable'` | Rust toolchain version |
+| Input               | Type    | Default    | Description                                                    |
+| ------------------- | ------- | ---------- | -------------------------------------------------------------- |
+| `change-detection`  | boolean | `true`     | Enable dorny/paths-filter gating                               |
+| `change-filters`    | string  | `''`       | Extra path filters (YAML, appended to defaults)                |
+| `system-deps`       | string  | `''`       | apt packages to install (e.g., `libdbus-1-dev pkg-config lld`) |
+| `workspace`         | boolean | `false`    | Use `--workspace` flag on cargo commands                       |
+| `all-features`      | boolean | `true`     | Use `--all-features` flag                                      |
+| `all-targets`       | boolean | `true`     | Use `--all-targets` for clippy                                 |
+| `nextest`           | boolean | `true`     | Use cargo-nextest (falls back to cargo test if false)          |
+| `cargo-deny`        | boolean | `true`     | Run cargo-deny audit                                           |
+| `nightly-fmt`       | boolean | `false`    | Use nightly toolchain for rustfmt                              |
+| `extra-clippy-args` | string  | `''`       | Additional clippy arguments                                    |
+| `rust-toolchain`    | string  | `'stable'` | Rust toolchain version                                         |
 
 #### Default path filters (always included)
 
@@ -153,12 +156,13 @@ ci:
     sudo apt-get install -y ${{ inputs.system-deps }}
 ```
 
-This runs in EVERY job that needs it (check, test). It's 3 lines repeated, but
-that's fine — the alternative (a separate job with artifact passing) is slower.
+This runs in EVERY job that needs it (check, test). It's 3 lines repeated, but that's fine — the
+alternative (a separate job with artifact passing) is slower.
 
 #### Caller examples
 
 **opaline** (simplest — all defaults work):
+
 ```yaml
 jobs:
   ci:
@@ -167,6 +171,7 @@ jobs:
 ```
 
 **unifi-cli** (workspace + system deps + nightly fmt):
+
 ```yaml
 jobs:
   ci:
@@ -184,6 +189,7 @@ jobs:
 ```
 
 **silkprint** (workspace + extra change filters for web):
+
 ```yaml
 jobs:
   ci:
@@ -205,21 +211,22 @@ Publishes crates to crates.io via OIDC trusted publishing.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `crates` | string | `''` | Space-separated crate names in publish order (empty = single crate) |
-| `publish-delay` | number | `30` | Seconds between workspace crate publishes |
+| Input           | Type   | Default | Description                                                         |
+| --------------- | ------ | ------- | ------------------------------------------------------------------- |
+| `crates`        | string | `''`    | Space-separated crate names in publish order (empty = single crate) |
+| `publish-delay` | number | `30`    | Seconds between workspace crate publishes                           |
 
 #### Permissions
 
 ```yaml
 permissions:
-  id-token: write  # Required for OIDC
+  id-token: write # Required for OIDC
 ```
 
 #### Jobs
 
 Single `publish` job:
+
 1. Checkout + rust setup + cache
 2. OIDC auth via `rust-lang/crates-io-auth-action@v1`
 3. If `crates` is empty: `cargo publish --locked`
@@ -228,6 +235,7 @@ Single `publish` job:
 #### Caller examples
 
 **opaline** (single crate):
+
 ```yaml
 jobs:
   publish:
@@ -237,6 +245,7 @@ jobs:
 ```
 
 **unifi-cli** (workspace, ordered):
+
 ```yaml
 jobs:
   publish:
@@ -252,44 +261,43 @@ jobs:
 
 ### rust-release.yml
 
-Manual version bump → tag → trigger CI/CD. This is the `release.yml` pattern
-shared across all 4 Rust projects.
+Manual version bump → tag → trigger CI/CD. This is the `release.yml` pattern shared across all 4
+Rust projects.
 
 #### Inputs (workflow_dispatch)
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `version` | string | `''` | Explicit version (e.g., `0.2.0`) — overrides bump |
-| `bump` | choice | `patch` | `patch` / `minor` / `major` |
-| `dry_run` | boolean | `false` | Build + test only, skip publish |
+| Input     | Type    | Default | Description                                       |
+| --------- | ------- | ------- | ------------------------------------------------- |
+| `version` | string  | `''`    | Explicit version (e.g., `0.2.0`) — overrides bump |
+| `bump`    | choice  | `patch` | `patch` / `minor` / `major`                       |
+| `dry_run` | boolean | `false` | Build + test only, skip publish                   |
 
 #### Parameterized inputs (workflow_call — set by caller)
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `system-deps` | string | `''` | apt packages for build/test |
-| `workspace` | boolean | `false` | Workspace mode |
-| `workspace-crates` | string | `''` | Space-separated crate names for workspace version patching |
-| `all-features` | boolean | `true` | `--all-features` for build/test/clippy |
-| `nextest` | boolean | `true` | Use nextest for release validation |
-| `cargo-update-flag` | string | `'-w'` | Flag for `cargo update` (`-w` or `-p crate-name`) |
-| `generate-release-notes` | boolean | `false` | Generate + upload release notes artifact |
-| `generate-changelog` | boolean | `false` | Update CHANGELOG.md via git-iris |
-| `cicd-workflow` | string | `'cicd.yml'` | Downstream workflow to trigger |
-| `pass-run-id` | boolean | `false` | Pass `release_run_id` to downstream |
+| Input                    | Type    | Default      | Description                                                |
+| ------------------------ | ------- | ------------ | ---------------------------------------------------------- |
+| `system-deps`            | string  | `''`         | apt packages for build/test                                |
+| `workspace`              | boolean | `false`      | Workspace mode                                             |
+| `workspace-crates`       | string  | `''`         | Space-separated crate names for workspace version patching |
+| `all-features`           | boolean | `true`       | `--all-features` for build/test/clippy                     |
+| `nextest`                | boolean | `true`       | Use nextest for release validation                         |
+| `cargo-update-flag`      | string  | `'-w'`       | Flag for `cargo update` (`-w` or `-p crate-name`)          |
+| `generate-release-notes` | boolean | `false`      | Generate + upload release notes artifact                   |
+| `generate-changelog`     | boolean | `false`      | Update CHANGELOG.md via git-iris                           |
+| `cicd-workflow`          | string  | `'cicd.yml'` | Downstream workflow to trigger                             |
+| `pass-run-id`            | boolean | `false`      | Pass `release_run_id` to downstream                        |
 
 #### Implementation notes
 
-**Dual trigger:** This workflow needs BOTH `workflow_dispatch` (for manual runs)
-AND `workflow_call` (for reuse). GitHub supports this — a workflow can have
-multiple triggers.
+**Dual trigger:** This workflow needs BOTH `workflow_dispatch` (for manual runs) AND `workflow_call`
+(for reuse). GitHub supports this — a workflow can have multiple triggers.
 
-Actually — correction. `workflow_dispatch` and `workflow_call` have separate
-input mechanisms and can't coexist cleanly. The better pattern:
+Actually — correction. `workflow_dispatch` and `workflow_call` have separate input mechanisms and
+can't coexist cleanly. The better pattern:
 
-**Keep `release.yml` in each repo** as a thin dispatcher that calls the shared
-workflow. The `workflow_dispatch` inputs (version, bump, dry_run) live in the
-caller. The shared workflow receives them via `workflow_call` inputs.
+**Keep `release.yml` in each repo** as a thin dispatcher that calls the shared workflow. The
+`workflow_dispatch` inputs (version, bump, dry_run) live in the caller. The shared workflow receives
+them via `workflow_call` inputs.
 
 ```yaml
 # Caller: each repo's release.yml
@@ -298,17 +306,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Explicit version (e.g., 0.2.0)"
+        description: 'Explicit version (e.g., 0.2.0)'
         required: false
-        default: ""
+        default: ''
       bump:
-        description: "Version bump type"
+        description: 'Version bump type'
         required: false
         type: choice
-        default: "patch"
+        default: 'patch'
         options: [patch, minor, major]
       dry_run:
-        description: "Dry run"
+        description: 'Dry run'
         required: false
         type: boolean
         default: false
@@ -355,28 +363,29 @@ Cross-platform binary builds. Used by unifi-cli and git-iris.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `binaries` | string | **required** | Space-separated binary names to extract (e.g., `unifly unifly-tui`) |
-| `system-deps` | string | `''` | Linux-only apt packages |
-| `targets` | string | `'linux-amd64 linux-arm64 macos-arm64 windows-gnu'` | Space-separated target list |
-| `build-packages` | boolean | `false` | Build .deb + .rpm (git-iris only currently) |
-| `cargo-build-args` | string | `'--release --locked'` | Extra cargo build arguments |
+| Input              | Type    | Default                                             | Description                                                         |
+| ------------------ | ------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+| `binaries`         | string  | **required**                                        | Space-separated binary names to extract (e.g., `unifly unifly-tui`) |
+| `system-deps`      | string  | `''`                                                | Linux-only apt packages                                             |
+| `targets`          | string  | `'linux-amd64 linux-arm64 macos-arm64 windows-gnu'` | Space-separated target list                                         |
+| `build-packages`   | boolean | `false`                                             | Build .deb + .rpm (git-iris only currently)                         |
+| `cargo-build-args` | string  | `'--release --locked'`                              | Extra cargo build arguments                                         |
 
 #### Matrix strategy
 
-| Target | Runner | Rust Target | Binary suffix |
-|--------|--------|-------------|---------------|
-| `linux-amd64` | `ubuntu-latest` | `x86_64-unknown-linux-gnu` | (none) |
-| `linux-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | (none) |
-| `macos-arm64` | `macos-latest` | `aarch64-apple-darwin` | (none) |
-| `windows-gnu` | `windows-latest` | `x86_64-pc-windows-gnu` | `.exe` |
+| Target        | Runner             | Rust Target                 | Binary suffix |
+| ------------- | ------------------ | --------------------------- | ------------- |
+| `linux-amd64` | `ubuntu-latest`    | `x86_64-unknown-linux-gnu`  | (none)        |
+| `linux-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | (none)        |
+| `macos-arm64` | `macos-latest`     | `aarch64-apple-darwin`      | (none)        |
+| `windows-gnu` | `windows-latest`   | `x86_64-pc-windows-gnu`     | `.exe`        |
 
 Each target uploads artifacts named `{binary}-{target}`.
 
 #### Packages job (optional)
 
 If `build-packages: true`:
+
 - Installs `cargo-deb` and `cargo-generate-rpm`
 - Builds `.deb` and `.rpm` packages
 - Generates man page
@@ -385,6 +394,7 @@ If `build-packages: true`:
 #### Caller example
 
 **unifi-cli:**
+
 ```yaml
 jobs:
   build:
@@ -397,6 +407,7 @@ jobs:
 ```
 
 **git-iris:**
+
 ```yaml
 jobs:
   build:
@@ -418,26 +429,27 @@ VitePress or MkDocs → GitHub Pages. Identical pattern across 6+ repos.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `docs-dir` | string | `'docs'` | Path to docs directory |
-| `node-version` | string | `'24'` | Node.js version |
-| `pnpm-version` | string | `'10'` | pnpm version |
-| `engine` | string | `'vitepress'` | `vitepress` or `mkdocs` |
-| `python-version` | string | `'3.13'` | Python version (MkDocs only) |
-| `path-triggers` | string | `'docs/**'` | Paths that trigger the build |
+| Input            | Type   | Default       | Description                  |
+| ---------------- | ------ | ------------- | ---------------------------- |
+| `docs-dir`       | string | `'docs'`      | Path to docs directory       |
+| `node-version`   | string | `'24'`        | Node.js version              |
+| `pnpm-version`   | string | `'10'`        | pnpm version                 |
+| `engine`         | string | `'vitepress'` | `vitepress` or `mkdocs`      |
+| `python-version` | string | `'3.13'`      | Python version (MkDocs only) |
+| `path-triggers`  | string | `'docs/**'`   | Paths that trigger the build |
 
 #### Permissions
 
 ```yaml
 permissions:
   pages: write
-  id-token: write  # OIDC for Pages deployment
+  id-token: write # OIDC for Pages deployment
 ```
 
 #### Jobs
 
 **VitePress path:**
+
 1. Checkout
 2. Setup Node + pnpm
 3. `pnpm install` in docs dir
@@ -446,6 +458,7 @@ permissions:
 6. Deploy to GitHub Pages
 
 **MkDocs path:**
+
 1. Checkout
 2. Setup Python + uv
 3. `uv sync` or `uv pip install`
@@ -457,7 +470,7 @@ permissions:
 ```yaml
 concurrency:
   group: pages
-  cancel-in-progress: false  # Never cancel in-flight deployments
+  cancel-in-progress: false # Never cancel in-flight deployments
 ```
 
 #### Caller example
@@ -484,20 +497,20 @@ Creates a GitHub Release with AI-generated notes via git-iris.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `release-notes-model` | string | `'claude-sonnet-4-5-20250929'` | AI model for git-iris |
-| `release-notes-provider` | string | `'anthropic'` | LLM provider |
-| `attach-artifacts` | boolean | `false` | Download + attach build artifacts |
-| `artifact-pattern` | string | `'*'` | Glob for which artifacts to attach |
-| `release-notes-run-id` | string | `''` | Use pre-generated notes from this run |
-| `draft` | boolean | `false` | Create as draft release |
+| Input                    | Type    | Default                        | Description                           |
+| ------------------------ | ------- | ------------------------------ | ------------------------------------- |
+| `release-notes-model`    | string  | `'claude-sonnet-4-5-20250929'` | AI model for git-iris                 |
+| `release-notes-provider` | string  | `'anthropic'`                  | LLM provider                          |
+| `attach-artifacts`       | boolean | `false`                        | Download + attach build artifacts     |
+| `artifact-pattern`       | string  | `'*'`                          | Glob for which artifacts to attach    |
+| `release-notes-run-id`   | string  | `''`                           | Use pre-generated notes from this run |
+| `draft`                  | boolean | `false`                        | Create as draft release               |
 
 #### Permissions
 
 ```yaml
 permissions:
-  contents: write  # Create releases
+  contents: write # Create releases
 ```
 
 #### Jobs
@@ -511,13 +524,14 @@ permissions:
 
 #### Special case: git-iris self-reference
 
-git-iris uses `uses: ./` to reference itself as a composite action. This
-**cannot** be shared — it must remain inline in git-iris's own workflow.
-The shared workflow uses `hyperb1iss/git-iris@v2` for all OTHER repos.
+git-iris uses `uses: ./` to reference itself as a composite action. This **cannot** be shared — it
+must remain inline in git-iris's own workflow. The shared workflow uses `hyperb1iss/git-iris@v2` for
+all OTHER repos.
 
 #### Caller example
 
 **opaline** (simple):
+
 ```yaml
 jobs:
   release:
@@ -528,6 +542,7 @@ jobs:
 ```
 
 **unifi-cli** (with artifacts + pre-generated notes):
+
 ```yaml
 jobs:
   release:
@@ -548,14 +563,14 @@ Updates the Homebrew formula in `hyperb1iss/homebrew-tap`.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `formula-name` | string | **required** | e.g., `git-iris` or `unifly` |
-| `tap-repo` | string | `'hyperb1iss/homebrew-tap'` | Target tap repository |
-| `description` | string | **required** | Formula description |
-| `homepage` | string | **required** | Formula homepage URL |
-| `binary-names` | string | **required** | Space-separated binaries to install |
-| `source-build-fallback` | boolean | `false` | Include source build for unsupported archs |
+| Input                   | Type    | Default                     | Description                                |
+| ----------------------- | ------- | --------------------------- | ------------------------------------------ |
+| `formula-name`          | string  | **required**                | e.g., `git-iris` or `unifly`               |
+| `tap-repo`              | string  | `'hyperb1iss/homebrew-tap'` | Target tap repository                      |
+| `description`           | string  | **required**                | Formula description                        |
+| `homepage`              | string  | **required**                | Formula homepage URL                       |
+| `binary-names`          | string  | **required**                | Space-separated binaries to install        |
+| `source-build-fallback` | boolean | `false`                     | Include source build for unsupported archs |
 
 #### Secrets
 
@@ -576,12 +591,12 @@ Build and push Docker images. Used by git-iris and droidmind.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `image-name` | string | **required** | e.g., `hyperb1iss/git-iris` |
-| `registry` | string | `'docker.io'` | `docker.io` or `ghcr.io` or both |
-| `platforms` | string | `'linux/amd64'` | Docker buildx platforms |
-| `push` | boolean | `true` | Actually push (false for test builds) |
+| Input        | Type    | Default         | Description                           |
+| ------------ | ------- | --------------- | ------------------------------------- |
+| `image-name` | string  | **required**    | e.g., `hyperb1iss/git-iris`           |
+| `registry`   | string  | `'docker.io'`   | `docker.io` or `ghcr.io` or both      |
+| `platforms`  | string  | `'linux/amd64'` | Docker buildx platforms               |
+| `push`       | boolean | `true`          | Actually push (false for test builds) |
 
 #### Secrets
 
@@ -606,17 +621,17 @@ Lint + test for Python projects using the Astral stack (uv, ruff).
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `python-version` | string | `'3.13'` | Python version |
-| `python-versions` | string | `''` | Multi-version matrix (e.g., `'3.11 3.12 3.13'`) |
-| `ruff` | boolean | `true` | Run ruff lint + format check |
-| `pytest` | boolean | `true` | Run pytest |
-| `pytest-args` | string | `''` | Extra pytest arguments |
-| `system-deps` | string | `''` | apt packages |
-| `rust-toolchain` | boolean | `false` | Install Rust (for native deps like uchroma) |
-| `services` | string | `''` | Service containers needed (e.g., `falkordb postgres`) |
-| `moonrepo` | boolean | `false` | Use moon for task orchestration |
+| Input             | Type    | Default  | Description                                           |
+| ----------------- | ------- | -------- | ----------------------------------------------------- |
+| `python-version`  | string  | `'3.13'` | Python version                                        |
+| `python-versions` | string  | `''`     | Multi-version matrix (e.g., `'3.11 3.12 3.13'`)       |
+| `ruff`            | boolean | `true`   | Run ruff lint + format check                          |
+| `pytest`          | boolean | `true`   | Run pytest                                            |
+| `pytest-args`     | string  | `''`     | Extra pytest arguments                                |
+| `system-deps`     | string  | `''`     | apt packages                                          |
+| `rust-toolchain`  | boolean | `false`  | Install Rust (for native deps like uchroma)           |
+| `services`        | string  | `''`     | Service containers needed (e.g., `falkordb postgres`) |
+| `moonrepo`        | boolean | `false`  | Use moon for task orchestration                       |
 
 #### Jobs
 
@@ -626,6 +641,7 @@ Lint + test for Python projects using the Astral stack (uv, ruff).
 #### Service containers
 
 For projects needing databases (sibyl, haven):
+
 ```yaml
 services:
   falkordb:
@@ -638,8 +654,8 @@ services:
       POSTGRES_PASSWORD: test
 ```
 
-Service containers are parameterized by name — the shared workflow includes
-definitions for known services and activates them based on the `services` input.
+Service containers are parameterized by name — the shared workflow includes definitions for known
+services and activates them based on the `services` input.
 
 ---
 
@@ -649,15 +665,15 @@ Publish to PyPI via trusted publishing (OIDC).
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `package-dir` | string | `'.'` | Directory containing pyproject.toml |
+| Input         | Type   | Default | Description                         |
+| ------------- | ------ | ------- | ----------------------------------- |
+| `package-dir` | string | `'.'`   | Directory containing pyproject.toml |
 
 #### Permissions
 
 ```yaml
 permissions:
-  id-token: write  # PyPI OIDC
+  id-token: write # PyPI OIDC
 ```
 
 #### Jobs
@@ -676,12 +692,12 @@ moonrepo workspace CI. Used by haven and prezzer.
 
 #### Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `node-version` | string | `'24'` | Node.js version |
-| `python-version` | string | `'3.13'` | Python version |
-| `pnpm-version` | string | `'10'` | pnpm version |
-| `moon-tasks` | string | `'check'` | Space-separated moon tasks to run |
+| Input            | Type   | Default   | Description                       |
+| ---------------- | ------ | --------- | --------------------------------- |
+| `node-version`   | string | `'24'`    | Node.js version                   |
+| `python-version` | string | `'3.13'`  | Python version                    |
+| `pnpm-version`   | string | `'10'`    | pnpm version                      |
+| `moon-tasks`     | string | `'check'` | Space-separated moon tasks to run |
 
 #### Jobs
 
@@ -696,18 +712,18 @@ moonrepo workspace CI. Used by haven and prezzer.
 
 Migrate in this order — least complex first to shake out issues early:
 
-| Order | Repo | Complexity | Why this order |
-|-------|------|------------|----------------|
-| 1 | **opaline** | Low | Simplest Rust project, all defaults work |
-| 2 | **silkprint** | Medium | Workspace + WASM (WASM stays inline) |
-| 3 | **unifi-cli** | Medium | Workspace + system deps + artifacts |
-| 4 | **git-iris** | High | Most CD jobs, self-referencing action, Docker, AUR |
-| 5 | **signalrgb-ha** | Low | Simple Python CI |
-| 6 | **droidmind** | Medium | Python + Docker + docs |
-| 7 | **sibyl** | Medium | Python + service containers |
-| 8 | **uchroma** | High | Multi-Python + Rust native deps + PPA |
-| 9 | **haven** | High | moonrepo + Python + Node + Android |
-| 10 | **prezzer** | Medium | moonrepo + Python + Node |
+| Order | Repo             | Complexity | Why this order                                     |
+| ----- | ---------------- | ---------- | -------------------------------------------------- |
+| 1     | **opaline**      | Low        | Simplest Rust project, all defaults work           |
+| 2     | **silkprint**    | Medium     | Workspace + WASM (WASM stays inline)               |
+| 3     | **unifi-cli**    | Medium     | Workspace + system deps + artifacts                |
+| 4     | **git-iris**     | High       | Most CD jobs, self-referencing action, Docker, AUR |
+| 5     | **signalrgb-ha** | Low        | Simple Python CI                                   |
+| 6     | **droidmind**    | Medium     | Python + Docker + docs                             |
+| 7     | **sibyl**        | Medium     | Python + service containers                        |
+| 8     | **uchroma**      | High       | Multi-Python + Rust native deps + PPA              |
+| 9     | **haven**        | High       | moonrepo + Python + Node + Android                 |
+| 10    | **prezzer**      | Medium     | moonrepo + Python + Node                           |
 
 ### Per-Repo Migration Steps
 
@@ -724,29 +740,28 @@ For each repo:
 
 Some things are too project-specific to share:
 
-| Repo | Inline job | Reason |
-|------|-----------|--------|
-| silkprint | WASM build + web build + deploy | Highly custom pipeline |
-| git-iris | `update-major-tag` | Only git-iris is a GitHub Action |
-| git-iris | `update-aur` | Only git-iris publishes to AUR |
-| git-iris | Self-referencing release notes | Uses `./` composite action |
-| haven | Android APK build | Kotlin/Gradle, unique to haven |
+| Repo      | Inline job                      | Reason                           |
+| --------- | ------------------------------- | -------------------------------- |
+| silkprint | WASM build + web build + deploy | Highly custom pipeline           |
+| git-iris  | `update-major-tag`              | Only git-iris is a GitHub Action |
+| git-iris  | `update-aur`                    | Only git-iris publishes to AUR   |
+| git-iris  | Self-referencing release notes  | Uses `./` composite action       |
+| haven     | Android APK build               | Kotlin/Gradle, unique to haven   |
 
 ### What gets normalized (currently inconsistent)
 
-| Issue | Current state | Shared workflow standard |
-|-------|--------------|--------------------------|
-| Change detection | opaline + silkprint: yes; others: no | Default ON, opt-out |
-| Nextest | opaline + silkprint: yes; others: no | Default ON, opt-out |
-| `--all-features` | opaline + silkprint: yes; others: no | Default ON, opt-out |
-| `--all-targets` | opaline + silkprint: yes; others: no | Default ON, opt-out |
-| cargo-deny | opaline + silkprint: yes; others: no | Default ON, opt-out |
-| Nightly fmt | Only unifi-cli: yes | Default OFF, opt-in |
-| Cache save-if | Only opaline: main-only | Always: save-if main only |
+| Issue            | Current state                        | Shared workflow standard  |
+| ---------------- | ------------------------------------ | ------------------------- |
+| Change detection | opaline + silkprint: yes; others: no | Default ON, opt-out       |
+| Nextest          | opaline + silkprint: yes; others: no | Default ON, opt-out       |
+| `--all-features` | opaline + silkprint: yes; others: no | Default ON, opt-out       |
+| `--all-targets`  | opaline + silkprint: yes; others: no | Default ON, opt-out       |
+| cargo-deny       | opaline + silkprint: yes; others: no | Default ON, opt-out       |
+| Nightly fmt      | Only unifi-cli: yes                  | Default OFF, opt-in       |
+| Cache save-if    | Only opaline: main-only              | Always: save-if main only |
 
-This means unifi-cli and git-iris will get BETTER CI for free just by
-migrating — they'll pick up nextest, change detection, all-features, and
-cargo-deny without any extra work.
+This means unifi-cli and git-iris will get BETTER CI for free just by migrating — they'll pick up
+nextest, change detection, all-features, and cargo-deny without any extra work.
 
 ---
 
@@ -763,8 +778,7 @@ git push origin v1.0.0
 git push origin v1 --force
 ```
 
-Callers use `@v1` for automatic minor/patch updates. Only bump to `v2` for
-breaking input changes.
+Callers use `@v1` for automatic minor/patch updates. Only bump to `v2` for breaking input changes.
 
 ### What counts as breaking
 
@@ -783,7 +797,8 @@ breaking input changes.
 ### Release process
 
 1. Make changes on a branch
-2. Test by pointing a consuming repo at the branch: `uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@branch-name`
+2. Test by pointing a consuming repo at the branch:
+   `uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@branch-name`
 3. Merge to main
 4. Tag with semver + update major tag
 5. Consuming repos automatically get the update via `@v1`
@@ -833,6 +848,7 @@ breaking input changes.
 ## Quick Reference: Env + Concurrency Patterns
 
 All Rust workflows should set:
+
 ```yaml
 env:
   CARGO_TERM_COLOR: always
@@ -840,6 +856,7 @@ env:
 ```
 
 Concurrency for CI:
+
 ```yaml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -847,6 +864,7 @@ concurrency:
 ```
 
 Concurrency for releases (never cancel):
+
 ```yaml
 concurrency:
   group: release
@@ -854,6 +872,7 @@ concurrency:
 ```
 
 Concurrency for Pages (never cancel):
+
 ```yaml
 concurrency:
   group: pages

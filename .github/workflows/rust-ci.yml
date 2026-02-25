@@ -8,49 +8,49 @@ on:
   workflow_call:
     inputs:
       change-detection:
-        description: "Enable dorny/paths-filter gating"
+        description: 'Enable dorny/paths-filter gating'
         type: boolean
         default: true
       change-filters:
-        description: "Extra path filters (YAML, appended to defaults)"
+        description: 'Extra path filters (YAML, appended to defaults)'
         type: string
-        default: ""
+        default: ''
       system-deps:
         description: "apt packages to install (e.g., 'libdbus-1-dev pkg-config lld')"
         type: string
-        default: ""
+        default: ''
       workspace:
-        description: "Use --workspace flag on cargo commands"
+        description: 'Use --workspace flag on cargo commands'
         type: boolean
         default: false
       all-features:
-        description: "Use --all-features flag"
+        description: 'Use --all-features flag'
         type: boolean
         default: true
       all-targets:
-        description: "Use --all-targets for clippy"
+        description: 'Use --all-targets for clippy'
         type: boolean
         default: true
       nextest:
-        description: "Use cargo-nextest (falls back to cargo test if false)"
+        description: 'Use cargo-nextest (falls back to cargo test if false)'
         type: boolean
         default: true
       cargo-deny:
-        description: "Run cargo-deny audit"
+        description: 'Run cargo-deny audit'
         type: boolean
         default: true
       nightly-fmt:
-        description: "Use nightly toolchain for rustfmt"
+        description: 'Use nightly toolchain for rustfmt'
         type: boolean
         default: false
       extra-clippy-args:
-        description: "Additional clippy arguments"
+        description: 'Additional clippy arguments'
         type: string
-        default: ""
+        default: ''
       rust-toolchain:
-        description: "Rust toolchain version"
+        description: 'Rust toolchain version'
         type: string
-        default: "stable"
+        default: 'stable'
 
 env:
   CARGO_TERM_COLOR: always

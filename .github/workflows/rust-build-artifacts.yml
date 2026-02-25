@@ -11,21 +11,21 @@ on:
         type: string
         required: true
       system-deps:
-        description: "Linux-only apt packages"
+        description: 'Linux-only apt packages'
         type: string
-        default: ""
+        default: ''
       targets:
-        description: "Space-separated target list"
+        description: 'Space-separated target list'
         type: string
-        default: "linux-amd64 linux-arm64 macos-arm64 windows-gnu"
+        default: 'linux-amd64 linux-arm64 macos-arm64 windows-gnu'
       build-packages:
-        description: "Build .deb + .rpm packages"
+        description: 'Build .deb + .rpm packages'
         type: boolean
         default: false
       cargo-build-args:
-        description: "Extra cargo build arguments"
+        description: 'Extra cargo build arguments'
         type: string
-        default: "--release --locked"
+        default: '--release --locked'
 
 env:
   CARGO_TERM_COLOR: always
@@ -44,19 +44,19 @@ jobs:
           - target: linux-amd64
             os: ubuntu-latest
             rust-target: x86_64-unknown-linux-gnu
-            suffix: ""
+            suffix: ''
           - target: linux-arm64
             os: ubuntu-24.04-arm
             rust-target: aarch64-unknown-linux-gnu
-            suffix: ""
+            suffix: ''
           - target: macos-arm64
             os: macos-latest
             rust-target: aarch64-apple-darwin
-            suffix: ""
+            suffix: ''
           - target: windows-gnu
             os: windows-latest
             rust-target: x86_64-pc-windows-gnu
-            suffix: ".exe"
+            suffix: '.exe'
 
     runs-on: ${{ matrix.os }}
     if: contains(inputs.targets, matrix.target)

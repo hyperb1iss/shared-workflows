@@ -4,7 +4,8 @@ Reusable GitHub Actions workflows for the hyperb1iss project ecosystem.
 
 ## Purpose
 
-Centralize CI/CD workflows that are currently duplicated across 15+ repos. Each consuming repo should go from 50-100+ lines of workflow YAML to ~10 lines calling a shared workflow.
+Centralize CI/CD workflows that are currently duplicated across 15+ repos. Each consuming repo
+should go from 50-100+ lines of workflow YAML to ~10 lines calling a shared workflow.
 
 ## Repository Structure
 
@@ -54,16 +55,16 @@ pypa/gh-action-pypi-publish@release/v1
 
 ## Workflow Quick Reference
 
-| Workflow | Key Inputs | Consumers |
-|----------|-----------|-----------|
-| `rust-ci` | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint |
-| `rust-publish` | crates, publish-delay | opaline, unifi-cli, git-iris, silkprint |
-| `rust-release` | version/bump, workspace-crates, cicd-workflow | opaline, unifi-cli, git-iris, silkprint |
-| `rust-build-artifacts` | binaries, targets, build-packages | unifi-cli, git-iris |
-| `docs-deploy` | engine (vitepress/mkdocs), docs-dir | 6+ repos |
-| `github-release` | attach-artifacts, release-notes-run-id | 6+ repos |
-| `homebrew-update` | formula-name, binary-names | unifi-cli, git-iris |
-| `docker-publish` | image-name, registry, platforms | git-iris, droidmind |
-| `python-ci` | python-versions, services, rust-toolchain | 6+ repos |
-| `python-publish` | package-dir | droidmind, sibyl, uchroma, signalrgb-ha |
-| `moon-ci` | moon-tasks | haven, prezzer |
+| Workflow               | Key Inputs                                               | Consumers                               |
+| ---------------------- | -------------------------------------------------------- | --------------------------------------- |
+| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint |
+| `rust-publish`         | crates, publish-delay                                    | opaline, unifi-cli, git-iris, silkprint |
+| `rust-release`         | version/bump, workspace-crates, cicd-workflow            | opaline, unifi-cli, git-iris, silkprint |
+| `rust-build-artifacts` | binaries, targets, build-packages                        | unifi-cli, git-iris                     |
+| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                      | 6+ repos                                |
+| `github-release`       | attach-artifacts, release-notes-run-id                   | 6+ repos                                |
+| `homebrew-update`      | formula-name, binary-names                               | unifi-cli, git-iris                     |
+| `docker-publish`       | image-name, registry, platforms                          | git-iris, droidmind                     |
+| `python-ci`            | python-versions, services, rust-toolchain                | 6+ repos                                |
+| `python-publish`       | package-dir                                              | droidmind, sibyl, uchroma, signalrgb-ha |
+| `moon-ci`              | moon-tasks                                               | haven, prezzer                          |

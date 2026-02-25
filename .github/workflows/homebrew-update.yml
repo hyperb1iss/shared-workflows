@@ -7,27 +7,27 @@ on:
   workflow_call:
     inputs:
       formula-name:
-        description: "Formula name (e.g., git-iris or unifly)"
+        description: 'Formula name (e.g., git-iris or unifly)'
         type: string
         required: true
       tap-repo:
-        description: "Target tap repository"
+        description: 'Target tap repository'
         type: string
-        default: "hyperb1iss/homebrew-tap"
+        default: 'hyperb1iss/homebrew-tap'
       description:
-        description: "Formula description"
+        description: 'Formula description'
         type: string
         required: true
       homepage:
-        description: "Formula homepage URL"
+        description: 'Formula homepage URL'
         type: string
         required: true
       binary-names:
-        description: "Space-separated binaries to install"
+        description: 'Space-separated binaries to install'
         type: string
         required: true
       source-build-fallback:
-        description: "Include source build for unsupported archs"
+        description: 'Include source build for unsupported archs'
         type: boolean
         default: false
     secrets:
@@ -45,7 +45,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: "binaries-*"
+          pattern: 'binaries-*'
           path: artifacts/
           merge-multiple: false
 

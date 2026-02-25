@@ -7,29 +7,29 @@ on:
   workflow_call:
     inputs:
       image-name:
-        description: "Image name (e.g., hyperb1iss/git-iris)"
+        description: 'Image name (e.g., hyperb1iss/git-iris)'
         type: string
         required: true
       registry:
-        description: "docker.io or ghcr.io or both (comma-separated)"
+        description: 'docker.io or ghcr.io or both (comma-separated)'
         type: string
-        default: "docker.io"
+        default: 'docker.io'
       platforms:
-        description: "Docker buildx platforms"
+        description: 'Docker buildx platforms'
         type: string
-        default: "linux/amd64"
+        default: 'linux/amd64'
       push:
-        description: "Actually push (false for test builds)"
+        description: 'Actually push (false for test builds)'
         type: boolean
         default: true
       dockerfile:
-        description: "Path to Dockerfile"
+        description: 'Path to Dockerfile'
         type: string
-        default: "Dockerfile"
+        default: 'Dockerfile'
       build-args:
-        description: "Docker build arguments"
+        description: 'Docker build arguments'
         type: string
-        default: ""
+        default: ''
 
 permissions:
   packages: write

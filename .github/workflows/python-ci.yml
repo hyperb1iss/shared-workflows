@@ -7,37 +7,37 @@ on:
   workflow_call:
     inputs:
       python-version:
-        description: "Python version (used for lint + single-version test)"
+        description: 'Python version (used for lint + single-version test)'
         type: string
-        default: "3.13"
+        default: '3.13'
       python-versions:
-        description: "JSON array for multi-version matrix (e.g., '[\"3.11\", \"3.12\", \"3.13\"]')"
+        description: 'JSON array for multi-version matrix (e.g., ''["3.11", "3.12", "3.13"]'')'
         type: string
-        default: ""
+        default: ''
       ruff:
-        description: "Run ruff lint + format check"
+        description: 'Run ruff lint + format check'
         type: boolean
         default: true
       pytest:
-        description: "Run pytest"
+        description: 'Run pytest'
         type: boolean
         default: true
       pytest-args:
-        description: "Extra pytest arguments"
+        description: 'Extra pytest arguments'
         type: string
-        default: ""
+        default: ''
       system-deps:
-        description: "apt packages"
+        description: 'apt packages'
         type: string
-        default: ""
+        default: ''
       rust-toolchain:
-        description: "Install Rust (for native deps like uchroma)"
+        description: 'Install Rust (for native deps like uchroma)'
         type: boolean
         default: false
       services:
         description: "Service containers needed (e.g., 'falkordb postgres')"
         type: string
-        default: ""
+        default: ''
 
 env:
   UV_SYSTEM_PYTHON: 1
@@ -118,11 +118,11 @@ jobs:
       falkordb:
         image: falkordb/falkordb:latest
         ports:
-          - "6379:6379"
+          - '6379:6379'
       postgres:
         image: pgvector/pgvector:pg16
         ports:
-          - "5432:5432"
+          - '5432:5432'
         env:
           POSTGRES_PASSWORD: test
           POSTGRES_DB: test

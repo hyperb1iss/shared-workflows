@@ -7,11 +7,11 @@ on:
   workflow_call:
     inputs:
       crates:
-        description: "Space-separated crate names in publish order (empty = single crate)"
+        description: 'Space-separated crate names in publish order (empty = single crate)'
         type: string
-        default: ""
+        default: ''
       publish-delay:
-        description: "Seconds between workspace crate publishes"
+        description: 'Seconds between workspace crate publishes'
         type: number
         default: 30
 
