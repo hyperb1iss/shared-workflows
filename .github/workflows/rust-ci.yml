@@ -1,0 +1,203 @@
+# ✨ Rust CI — shared-workflows
+# Lint, test, and audit for Rust projects.
+# Replaces 60-100 lines of duplicated CI YAML with ~15 in each consumer.
+
+name: Rust CI
+
+on:
+  workflow_call:
+    inputs:
+      change-detection:
+        description: "Enable dorny/paths-filter gating"
+        type: boolean
+        default: true
+      change-filters:
+        description: "Extra path filters (YAML, appended to defaults)"
+        type: string
+        default: ""
+      system-deps:
+        description: "apt packages to install (e.g., 'libdbus-1-dev pkg-config lld')"
+        type: string
+        default: ""
+      workspace:
+        description: "Use --workspace flag on cargo commands"
+        type: boolean
+        default: false
+      all-features:
+        description: "Use --all-features flag"
+        type: boolean
+        default: true
+      all-targets:
+        description: "Use --all-targets for clippy"
+        type: boolean
+        default: true
+      nextest:
+        description: "Use cargo-nextest (falls back to cargo test if false)"
+        type: boolean
+        default: true
+      cargo-deny:
+        description: "Run cargo-deny audit"
+        type: boolean
+        default: true
+      nightly-fmt:
+        description: "Use nightly toolchain for rustfmt"
+        type: boolean
+        default: false
+      extra-clippy-args:
+        description: "Additional clippy arguments"
+        type: string
+        default: ""
+      rust-toolchain:
+        description: "Rust toolchain version"
+        type: string
+        default: "stable"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Change Detection ──────────────────────────────────────────────
+  changes:
+    if: inputs.change-detection
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.rust || steps.filter.outputs.ci || 'true' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'tests/**'
+              - 'examples/**'
+              - 'benches/**'
+              - 'build.rs'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'deny.toml'
+              - 'rust-toolchain.toml'
+            ci:
+              - '.github/workflows/**'
+              - 'justfile'
+              - 'Makefile'
+            ${{ inputs.change-filters }}
+
+  # ── Check (fmt + clippy) ──────────────────────────────────────────
+  check:
+    needs: changes
+    if: |
+      always() &&
+      (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        if: inputs.system-deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.system-deps }}
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          components: clippy
+
+      - name: Setup Rust (nightly fmt)
+        if: inputs.nightly-fmt
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting
+        run: cargo ${{ inputs.nightly-fmt && '+nightly ' || '' }}fmt --all --check
+
+      - name: Clippy
+        run: >-
+          cargo clippy
+          --locked
+          ${{ inputs.workspace && '--workspace' || '' }}
+          ${{ inputs.all-targets && '--all-targets' || '' }}
+          ${{ inputs.all-features && '--all-features' || '' }}
+          ${{ inputs.extra-clippy-args }}
+          -- -D warnings
+
+  # ── Test ──────────────────────────────────────────────────────────
+  test:
+    needs: changes
+    if: |
+      always() &&
+      (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        if: inputs.system-deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.system-deps }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install nextest
+        if: inputs.nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run tests (nextest)
+        if: inputs.nextest
+        run: >-
+          cargo nextest run
+          --locked
+          ${{ inputs.workspace && '--workspace' || '' }}
+          ${{ inputs.all-features && '--all-features' || '' }}
+
+      - name: Run tests (cargo test)
+        if: ${{ !inputs.nextest }}
+        run: >-
+          cargo test
+          --locked
+          ${{ inputs.workspace && '--workspace' || '' }}
+          ${{ inputs.all-features && '--all-features' || '' }}
+
+      - name: Run doc tests
+        run: >-
+          cargo test --doc
+          --locked
+          ${{ inputs.workspace && '--workspace' || '' }}
+          ${{ inputs.all-features && '--all-features' || '' }}
+
+  # ── Cargo Deny ────────────────────────────────────────────────────
+  deny:
+    needs: changes
+    if: |
+      always() &&
+      inputs.cargo-deny &&
+      (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2

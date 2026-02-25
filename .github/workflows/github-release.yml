@@ -1,0 +1,100 @@
+# ✨ GitHub Release — shared-workflows
+# Creates a GitHub Release with AI-generated notes via git-iris.
+
+name: GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      release-notes-model:
+        description: "AI model for git-iris"
+        type: string
+        default: "claude-sonnet-4-5-20250929"
+      release-notes-provider:
+        description: "LLM provider"
+        type: string
+        default: "anthropic"
+      attach-artifacts:
+        description: "Download + attach build artifacts"
+        type: boolean
+        default: false
+      artifact-pattern:
+        description: "Glob for which artifacts to attach"
+        type: string
+        default: "*"
+      release-notes-run-id:
+        description: "Use pre-generated notes from this run"
+        type: string
+        default: ""
+      draft:
+        description: "Create as draft release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get previous tag
+        id: prev-tag
+        run: |
+          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+
+      - name: Download pre-generated release notes
+        if: inputs.release-notes-run-id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: .
+          run-id: ${{ inputs.release-notes-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes via git-iris
+        if: inputs.release-notes-run-id == ''
+        uses: hyperb1iss/git-iris@v2
+        with:
+          provider: ${{ inputs.release-notes-provider }}
+          model: ${{ inputs.release-notes-model }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Read release notes
+        id: notes
+        run: |
+          if [ -f release_notes.md ]; then
+            {
+              echo "body<<EOF"
+              cat release_notes.md
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "body=Release ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download build artifacts
+        if: inputs.attach-artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.artifact-pattern }}
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.body }}
+          draft: ${{ inputs.draft }}
+          files: ${{ inputs.attach-artifacts && 'artifacts/*' || '' }}

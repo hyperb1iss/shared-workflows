@@ -1,0 +1,128 @@
+# ✨ Homebrew Update — shared-workflows
+# Updates the Homebrew formula in hyperb1iss/homebrew-tap.
+
+name: Homebrew Update
+
+on:
+  workflow_call:
+    inputs:
+      formula-name:
+        description: "Formula name (e.g., git-iris or unifly)"
+        type: string
+        required: true
+      tap-repo:
+        description: "Target tap repository"
+        type: string
+        default: "hyperb1iss/homebrew-tap"
+      description:
+        description: "Formula description"
+        type: string
+        required: true
+      homepage:
+        description: "Formula homepage URL"
+        type: string
+        required: true
+      binary-names:
+        description: "Space-separated binaries to install"
+        type: string
+        required: true
+      source-build-fallback:
+        description: "Include source build for unsupported archs"
+        type: boolean
+        default: false
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
+
+concurrency:
+  group: homebrew
+  cancel-in-progress: false
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "binaries-*"
+          path: artifacts/
+          merge-multiple: false
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          for target in linux-amd64 macos-arm64; do
+            dir="artifacts/binaries-$target"
+            if [ -d "$dir" ]; then
+              # Create tarball from the directory contents
+              tarball="${{ inputs.formula-name }}-${version}-${target}.tar.gz"
+              tar -czf "$tarball" -C "$dir" .
+              sha=$(sha256sum "$tarball" | cut -d' ' -f1)
+              echo "${target//-/_}_sha=$sha" >> "$GITHUB_OUTPUT"
+              echo "${target//-/_}_tarball=$tarball" >> "$GITHUB_OUTPUT"
+              echo "✅ $target: $sha"
+            fi
+          done
+
+      - name: Generate formula
+        run: |
+          version="${{ steps.checksums.outputs.version }}"
+          repo="${{ github.repository }}"
+          cat > formula.rb << 'RUBY'
+          class ${{ inputs.formula-name }} < Formula
+            desc "${{ inputs.description }}"
+            homepage "${{ inputs.homepage }}"
+            version "$VERSION"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/$REPO/releases/download/v$VERSION/${{ inputs.formula-name }}-$VERSION-macos-arm64.tar.gz"
+                sha256 "$MACOS_SHA"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel?
+                url "https://github.com/$REPO/releases/download/v$VERSION/${{ inputs.formula-name }}-$VERSION-linux-amd64.tar.gz"
+                sha256 "$LINUX_SHA"
+              end
+            end
+
+            def install
+              BINARIES.each { |b| bin.install b }
+            end
+
+            test do
+              system bin/BINARIES.first, "--version"
+            end
+          end
+          RUBY
+
+          # Template substitution
+          binaries=$(echo '${{ inputs.binary-names }}' | tr ' ' '\n' | sed 's/.*/"&"/' | paste -sd, -)
+          sed -i "s|\$VERSION|$version|g" formula.rb
+          sed -i "s|\$REPO|$repo|g" formula.rb
+          sed -i "s|\$MACOS_SHA|${{ steps.checksums.outputs.macos_arm64_sha }}|g" formula.rb
+          sed -i "s|\$LINUX_SHA|${{ steps.checksums.outputs.linux_amd64_sha }}|g" formula.rb
+          sed -i "s|BINARIES.each|[$binaries].each|g" formula.rb
+          sed -i "s|bin/BINARIES.first|bin/\"$(echo '${{ inputs.binary-names }}' | cut -d' ' -f1)\"|g" formula.rb
+
+          cat formula.rb
+
+      - name: Push formula to tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${{ inputs.tap-repo }}.git" tap
+          cp formula.rb "tap/Formula/${{ inputs.formula-name }}.rb"
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${{ inputs.formula-name }}.rb"
+          git commit -m "Update ${{ inputs.formula-name }} to ${{ steps.checksums.outputs.version }}"
+          git push

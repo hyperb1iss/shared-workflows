@@ -1,0 +1,41 @@
+# ✨ Python Publish — shared-workflows
+# Publish to PyPI via trusted publishing (OIDC).
+
+name: Python Publish
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: "Directory containing pyproject.toml"
+        type: string
+        default: "."
+
+permissions:
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build package
+        working-directory: ${{ inputs.package-dir }}
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ inputs.package-dir }}/dist/

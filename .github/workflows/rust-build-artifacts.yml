@@ -1,0 +1,149 @@
+# ✨ Rust Build Artifacts — shared-workflows
+# Cross-platform binary builds with optional .deb/.rpm packaging.
+
+name: Rust Build Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      binaries:
+        description: "Space-separated binary names to extract (e.g., 'unifly unifly-tui')"
+        type: string
+        required: true
+      system-deps:
+        description: "Linux-only apt packages"
+        type: string
+        default: ""
+      targets:
+        description: "Space-separated target list"
+        type: string
+        default: "linux-amd64 linux-arm64 macos-arm64 windows-gnu"
+      build-packages:
+        description: "Build .deb + .rpm packages"
+        type: boolean
+        default: false
+      cargo-build-args:
+        description: "Extra cargo build arguments"
+        type: string
+        default: "--release --locked"
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── Build Matrix ──────────────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            os: ubuntu-latest
+            rust-target: x86_64-unknown-linux-gnu
+            suffix: ""
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+            rust-target: aarch64-unknown-linux-gnu
+            suffix: ""
+          - target: macos-arm64
+            os: macos-latest
+            rust-target: aarch64-apple-darwin
+            suffix: ""
+          - target: windows-gnu
+            os: windows-latest
+            rust-target: x86_64-pc-windows-gnu
+            suffix: ".exe"
+
+    runs-on: ${{ matrix.os }}
+    if: contains(inputs.targets, matrix.target)
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies (Linux)
+        if: inputs.system-deps != '' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.system-deps }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build ${{ inputs.cargo-build-args }} --target ${{ matrix.rust-target }}
+
+      - name: Stage binaries
+        shell: bash
+        run: |
+          mkdir -p staging
+          for binary in ${{ inputs.binaries }}; do
+            cp "target/${{ matrix.rust-target }}/release/${binary}${{ matrix.suffix }}" "staging/"
+            echo "📦 Staged ${binary}${{ matrix.suffix }}"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: staging/
+          if-no-files-found: error
+
+  # ── Linux Packages (.deb + .rpm) ─────────────────────────────────
+  packages:
+    if: inputs.build-packages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        if: inputs.system-deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.system-deps }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install packaging tools
+        run: cargo install cargo-deb cargo-generate-rpm
+
+      - name: Build .deb package
+        run: cargo deb
+
+      - name: Build .rpm package
+        run: cargo generate-rpm
+
+      - name: Generate man page
+        run: |
+          mkdir -p staging
+          # Build with man page generation if supported
+          for binary in ${{ inputs.binaries }}; do
+            if [ -f "target/release/man/${binary}.1" ]; then
+              cp "target/release/man/${binary}.1" staging/
+            fi
+          done
+
+      - name: Stage packages
+        run: |
+          mkdir -p staging
+          cp target/debian/*.deb staging/ 2>/dev/null || true
+          cp target/generate-rpm/*.rpm staging/ 2>/dev/null || true
+          ls -la staging/
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: staging/
+          if-no-files-found: warn

@@ -1,0 +1,59 @@
+# ✨ Rust Publish — shared-workflows
+# Publishes crates to crates.io via OIDC trusted publishing.
+
+name: Rust Publish
+
+on:
+  workflow_call:
+    inputs:
+      crates:
+        description: "Space-separated crate names in publish order (empty = single crate)"
+        type: string
+        default: ""
+      publish-delay:
+        description: "Seconds between workspace crate publishes"
+        type: number
+        default: 30
+
+permissions:
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Authenticate with crates.io
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish single crate
+        if: inputs.crates == ''
+        run: cargo publish --locked
+
+      - name: Publish workspace crates
+        if: inputs.crates != ''
+        run: |
+          crates="${{ inputs.crates }}"
+          first=true
+          for crate in $crates; do
+            if [ "$first" = true ]; then
+              first=false
+            else
+              echo "⏳ Waiting ${{ inputs.publish-delay }}s for crates.io index..."
+              sleep ${{ inputs.publish-delay }}
+            fi
+            echo "📦 Publishing $crate..."
+            cargo publish -p "$crate" --locked
+          done
