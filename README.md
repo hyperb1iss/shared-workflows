@@ -23,13 +23,12 @@
 
 <p align="center">
   <a href="#overview">Overview</a> •
-  <a href="#workflow-catalog">Catalog</a> •
-  <a href="#quick-start">Quick Start</a> •
+  <a href="#how-to-use-these-workflows">How To Use</a> •
   <a href="#rust-workflows">Rust</a> •
   <a href="#python-workflows">Python</a> •
   <a href="#common-workflows">Common</a> •
-  <a href="#versioning">Versioning</a> •
-  <a href="#contributing">Contributing</a>
+  <a href="#monorepo-workflows">Monorepo</a> •
+  <a href="#versioning">Versioning</a>
 </p>
 
 ---
@@ -42,7 +41,38 @@ into reusable `workflow_call` workflows that each consumer invokes in ~10 lines.
 
 > _One repo to rule them all. Bump an action version once, every project gets it._
 
-## Workflow Catalog
+## How To Use These Workflows
+
+### The Pattern
+
+Every workflow in this repo is a **reusable workflow** triggered via `workflow_call`. A consuming
+repo calls it with `uses:` in its own workflow file:
+
+```yaml
+# In the consuming repo: .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
+    with:
+      workspace: true # override defaults as needed
+    secrets: inherit # passes all org/repo secrets
+```
+
+### Rules
+
+1. **Caller YAML must live in `.github/workflows/`** — no subdirectories
+2. **Always use `secrets: inherit`** — passes all org/repo secrets automatically
+3. **Pin to `@v1`** — gets automatic minor/patch updates, no breaking changes
+4. **Override only what you need** — smart defaults are ON for everything
+5. **Keep project-specific jobs inline** — only use shared workflows for common patterns
+
+### Workflow Catalog
 
 | Workflow                  | Phase    | Description                             |
 | ------------------------- | -------- | --------------------------------------- |
@@ -58,35 +88,79 @@ into reusable `workflow_call` workflows that each consumer invokes in ~10 lines.
 | 📦 `python-publish`       | Python   | Publish to PyPI (OIDC)                  |
 | 🌙 `moon-ci`              | Monorepo | moonrepo workspace CI                   |
 
-## Quick Start
+### Typical CI/CD Pipeline (Rust)
 
-Call any workflow from your repo's `.github/workflows/` directory:
+A full Rust project pipeline composes these workflows:
 
 ```yaml
-name: CI
-on:
-  push:
-    branches: [main]
-  pull_request:
-
+# .github/workflows/ci.yml — runs on every push/PR
 jobs:
   ci:
     uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
     secrets: inherit
 ```
 
-That's it. All smart defaults are ON — nextest, cargo-deny, change detection, `--all-features`.
-Override only what you need:
+```yaml
+# .github/workflows/cicd.yml — runs on tag push
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
+    secrets: inherit
+
+  build:
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-build-artifacts.yml@v1
+    with:
+      binaries: 'my-binary'
+    secrets: inherit
+
+  release:
+    needs: [publish, build]
+    uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
+    with:
+      attach-artifacts: true
+    secrets: inherit
+```
 
 ```yaml
+# .github/workflows/release.yml — manual trigger
+on:
+  workflow_dispatch:
+    inputs:
+      version: { type: string, default: '' }
+      bump: { type: choice, default: 'patch', options: [patch, minor, major] }
+      dry_run: { type: boolean, default: false }
+
+jobs:
+  release:
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-release.yml@v1
+    with:
+      version: ${{ inputs.version }}
+      bump: ${{ inputs.bump }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit
+    permissions:
+      contents: write
+      actions: write
+```
+
+### Typical CI/CD Pipeline (Python)
+
+```yaml
+# .github/workflows/ci.yml
 jobs:
   ci:
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-    with:
-      system-deps: 'libdbus-1-dev pkg-config lld'
-      workspace: true
-      nightly-fmt: true
-      cargo-deny: false
+    uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
+    secrets: inherit
+```
+
+```yaml
+# .github/workflows/publish.yml — runs on tag push
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
     secrets: inherit
 ```
 
@@ -114,6 +188,38 @@ The highest-value workflow. Replaces 60–100 lines per Rust project.
 
 **Jobs:** `changes` → `check` (fmt + clippy) → `test` (nextest + doc tests) → `deny`
 
+**Examples:**
+
+```yaml
+# Simplest — all defaults work
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
+  secrets: inherit
+
+# Workspace with system deps and nightly fmt
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
+  with:
+    system-deps: 'libdbus-1-dev pkg-config lld'
+    workspace: true
+    nightly-fmt: true
+    nextest: false
+    cargo-deny: false
+    change-detection: false
+  secrets: inherit
+
+# Workspace with extra change filters for web assets
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
+  with:
+    workspace: true
+    change-filters: |
+      web:
+        - 'web/**'
+        - 'fonts/**'
+  secrets: inherit
+```
+
 ### rust-publish.yml
 
 Publishes to crates.io via OIDC trusted publishing. No tokens to manage.
@@ -123,10 +229,27 @@ Publishes to crates.io via OIDC trusted publishing. No tokens to manage.
 | `crates`        | string | `''`    | Space-separated crates in order     |
 | `publish-delay` | number | `30`    | Seconds between workspace publishes |
 
+**Examples:**
+
+```yaml
+# Single crate
+publish:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
+  secrets: inherit
+
+# Workspace with ordered publishes
+publish:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
+  with:
+    crates: 'my-api my-core'
+    publish-delay: 30
+  secrets: inherit
+```
+
 ### rust-release.yml
 
 Version bump → tag → trigger CI/CD. Each consumer keeps a thin `release.yml` with
-`workflow_dispatch` inputs that calls this.
+`workflow_dispatch` inputs that calls this shared workflow.
 
 | Input                    | Type    | Default      | Description                       |
 | ------------------------ | ------- | ------------ | --------------------------------- |
@@ -136,8 +259,13 @@ Version bump → tag → trigger CI/CD. Each consumer keeps a thin `release.yml`
 | `system-deps`            | string  | `''`         | apt packages                      |
 | `workspace`              | boolean | `false`      | Workspace mode                    |
 | `workspace-crates`       | string  | `''`         | Crates for version patching       |
+| `all-features`           | boolean | `true`       | `--all-features` for build/test   |
+| `nextest`                | boolean | `true`       | Use nextest for validation        |
+| `cargo-update-flag`      | string  | `'-w'`       | Flag for `cargo update`           |
 | `generate-release-notes` | boolean | `false`      | Generate via git-iris             |
+| `generate-changelog`     | boolean | `false`      | Update CHANGELOG.md               |
 | `cicd-workflow`          | string  | `'cicd.yml'` | Downstream workflow to trigger    |
+| `pass-run-id`            | boolean | `false`      | Pass release_run_id to downstream |
 
 ### rust-build-artifacts.yml
 
@@ -160,6 +288,18 @@ Cross-platform binary builds with a 4-target matrix.
 | `macos-arm64` | `macos-latest`     | `aarch64-apple-darwin`      |
 | `windows-gnu` | `windows-latest`   | `x86_64-pc-windows-gnu`     |
 
+**Example:**
+
+```yaml
+build:
+  uses: hyperb1iss/shared-workflows/.github/workflows/rust-build-artifacts.yml@v1
+  with:
+    binaries: 'my-cli my-tui'
+    system-deps: 'libdbus-1-dev pkg-config'
+    build-packages: true
+  secrets: inherit
+```
+
 ---
 
 ## Python Workflows
@@ -180,7 +320,35 @@ containers for database-backed projects.
 | `rust-toolchain`  | boolean | `false`  | Install Rust (for native deps)                             |
 | `services`        | boolean | `false`  | Start service containers (FalkorDB + PostgreSQL)           |
 
-**Jobs:** `lint` (ruff check + format) → `test` / `test-with-services`
+**Jobs:** `lint` (ruff check + format) → `test` or `test-with-services`
+
+When `services: true`, both FalkorDB (port 6379) and PostgreSQL/pgvector (port 5432, password:
+`test`, db: `test`) are started.
+
+**Examples:**
+
+```yaml
+# Simple — all defaults
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
+  secrets: inherit
+
+# Multi-version with service containers
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
+  with:
+    python-versions: '["3.11", "3.12", "3.13"]'
+    services: true
+    pytest-args: '-x --timeout=60'
+  secrets: inherit
+
+# Native Rust extension (needs Rust toolchain)
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
+  with:
+    rust-toolchain: true
+  secrets: inherit
+```
 
 ### python-publish.yml
 
@@ -190,6 +358,15 @@ Publish to PyPI via OIDC trusted publishing.
 | ------------- | ------ | ------- | ----------------------------- |
 | `package-dir` | string | `'.'`   | Directory with pyproject.toml |
 
+**Example:**
+
+```yaml
+publish:
+  if: startsWith(github.ref, 'refs/tags/')
+  uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
+  secrets: inherit
+```
+
 ---
 
 ## Common Workflows
@@ -198,11 +375,28 @@ Publish to PyPI via OIDC trusted publishing.
 
 VitePress or MkDocs → GitHub Pages with OIDC deployment.
 
+| Input            | Type   | Default       | Description                  |
+| ---------------- | ------ | ------------- | ---------------------------- |
+| `docs-dir`       | string | `'docs'`      | Path to docs directory       |
+| `node-version`   | string | `'24'`        | Node.js version              |
+| `pnpm-version`   | string | `'10'`        | pnpm version                 |
+| `engine`         | string | `'vitepress'` | `vitepress` or `mkdocs`      |
+| `python-version` | string | `'3.13'`      | Python version (MkDocs only) |
+
+**Examples:**
+
 ```yaml
-jobs:
-  docs:
-    uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v1
-    # engine defaults to 'vitepress'
+# VitePress (default)
+docs:
+  uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v1
+  secrets: inherit
+
+# MkDocs
+docs:
+  uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v1
+  with:
+    engine: mkdocs
+  secrets: inherit
 ```
 
 ### github-release.yml
@@ -210,28 +404,129 @@ jobs:
 Creates a GitHub Release with AI-generated notes from
 [git-iris](https://github.com/hyperb1iss/git-iris).
 
+| Input                    | Type    | Default                        | Description                      |
+| ------------------------ | ------- | ------------------------------ | -------------------------------- |
+| `release-notes-model`    | string  | `'claude-sonnet-4-5-20250929'` | AI model for release notes       |
+| `release-notes-provider` | string  | `'anthropic'`                  | LLM provider                     |
+| `attach-artifacts`       | boolean | `false`                        | Attach build artifacts           |
+| `artifact-pattern`       | string  | `'*'`                          | Glob for artifacts to attach     |
+| `release-notes-run-id`   | string  | `''`                           | Use pre-generated notes from run |
+| `draft`                  | boolean | `false`                        | Create as draft release          |
+
+**Examples:**
+
 ```yaml
-jobs:
-  release:
-    needs: [publish, build]
-    uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
-    with:
-      attach-artifacts: true
-    secrets: inherit
+# Simple release with AI notes
+release:
+  needs: publish
+  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
+  secrets: inherit
+
+# Release with artifacts from build job
+release:
+  needs: [publish, build]
+  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
+  with:
+    attach-artifacts: true
+  secrets: inherit
+
+# Pre-generated notes from release workflow
+release:
+  needs: [publish, build]
+  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
+  with:
+    attach-artifacts: true
+    release-notes-run-id: ${{ inputs.release_run_id }}
+  secrets: inherit
 ```
 
 ### homebrew-update.yml
 
 Auto-updates the formula in [homebrew-tap](https://github.com/hyperb1iss/homebrew-tap) after a
-release.
+release. Generates CamelCase Ruby class names automatically (e.g., `git-iris` → `GitIris`).
+
+| Input          | Type   | Default                     | Description                  |
+| -------------- | ------ | --------------------------- | ---------------------------- |
+| `formula-name` | string | **required**                | e.g., `git-iris` or `unifly` |
+| `tap-repo`     | string | `'hyperb1iss/homebrew-tap'` | Target tap repository        |
+| `description`  | string | **required**                | Formula description          |
+| `homepage`     | string | **required**                | Formula homepage URL         |
+| `binary-names` | string | **required**                | Space-separated binaries     |
+
+**Requires secret:** `HOMEBREW_TAP_TOKEN`
+
+**Example:**
+
+```yaml
+homebrew:
+  needs: [build, release]
+  uses: hyperb1iss/shared-workflows/.github/workflows/homebrew-update.yml@v1
+  with:
+    formula-name: git-iris
+    description: 'AI-powered Git workflow assistant'
+    homepage: 'https://github.com/hyperb1iss/git-iris'
+    binary-names: 'git-iris'
+  secrets: inherit
+```
 
 ### docker-publish.yml
 
-Build and push Docker images to DockerHub, GHCR, or both.
+Build and push Docker images to DockerHub, GHCR, or both. Supports dry-run mode (`push: false`)
+without requiring registry credentials.
+
+| Input        | Type    | Default         | Description                       |
+| ------------ | ------- | --------------- | --------------------------------- |
+| `image-name` | string  | **required**    | e.g., `hyperb1iss/git-iris`       |
+| `registry`   | string  | `'docker.io'`   | `docker.io`, `ghcr.io`, or both   |
+| `platforms`  | string  | `'linux/amd64'` | Docker buildx platforms           |
+| `push`       | boolean | `true`          | Actually push (false for dry-run) |
+| `dockerfile` | string  | `'Dockerfile'`  | Path to Dockerfile                |
+| `build-args` | string  | `''`            | Docker build arguments            |
+
+**Examples:**
+
+```yaml
+# DockerHub only
+docker:
+  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
+  with:
+    image-name: hyperb1iss/my-app
+  secrets: inherit
+
+# Both registries, multi-platform
+docker:
+  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
+  with:
+    image-name: hyperb1iss/my-app
+    registry: 'docker.io, ghcr.io'
+    platforms: 'linux/amd64,linux/arm64'
+  secrets: inherit
+```
+
+---
+
+## Monorepo Workflows
 
 ### moon-ci.yml
 
 moonrepo workspace CI for polyglot projects (Node + Python).
+
+| Input            | Type   | Default   | Description                |
+| ---------------- | ------ | --------- | -------------------------- |
+| `node-version`   | string | `'24'`    | Node.js version            |
+| `python-version` | string | `'3.13'`  | Python version             |
+| `pnpm-version`   | string | `'10'`    | pnpm version               |
+| `moon-tasks`     | string | `'check'` | Space-separated moon tasks |
+
+**Example:**
+
+```yaml
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/moon-ci.yml@v1
+  with:
+    moon-tasks: 'check lint test'
+  secrets: inherit
+```
 
 ---
 
@@ -276,7 +571,7 @@ actions/download-artifact@v4     softprops/action-gh-release@v2
 astral-sh/setup-uv@v5           hyperb1iss/git-iris@v2
 docker/setup-buildx-action@v3   docker/login-action@v3
 docker/build-push-action@v6     moonrepo/setup-toolchain@v0
-docker/setup-qemu-action@v3    actions/github-script@v7
+docker/setup-qemu-action@v3     actions/github-script@v7
 ```
 
 ---
