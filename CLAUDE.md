@@ -50,6 +50,7 @@ actions/download-artifact@v4 softprops/action-gh-release@v2
 astral-sh/setup-uv@v5       hyperb1iss/git-iris@v2
 docker/setup-buildx-action@v3    docker/login-action@v3
 docker/build-push-action@v6      moonrepo/setup-toolchain@v0
+docker/setup-qemu-action@v3     actions/github-script@v7
 pypa/gh-action-pypi-publish@release/v1
 ```
 

@@ -68,7 +68,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      src: ${{ steps.filter.outputs.rust || steps.filter.outputs.ci || 'true' }}
+      src: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
       - uses: actions/checkout@v6
 

@@ -26,12 +26,9 @@ on:
         description: 'Python version (MkDocs only)'
         type: string
         default: '3.13'
-      path-triggers:
-        description: 'Paths that trigger the build'
-        type: string
-        default: 'docs/**'
 
 permissions:
+  contents: read
   pages: write
   id-token: write
 

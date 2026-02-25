@@ -16,6 +16,7 @@ on:
         default: 30
 
 permissions:
+  contents: read
   id-token: write
 
 env:

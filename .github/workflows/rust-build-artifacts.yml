@@ -59,7 +59,7 @@ jobs:
             suffix: '.exe'
 
     runs-on: ${{ matrix.os }}
-    if: contains(inputs.targets, matrix.target)
+    if: contains(format(' {0} ', inputs.targets), format(' {0} ', matrix.target))
 
     steps:
       - uses: actions/checkout@v6
