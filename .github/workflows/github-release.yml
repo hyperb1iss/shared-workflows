@@ -51,6 +51,9 @@ jobs:
         id: prev-tag
         run: |
           prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$prev" ]; then
+            prev=$(git rev-list --max-parents=0 HEAD)
+          fi
           echo "tag=$prev" >> "$GITHUB_OUTPUT"
 
       - name: Download pre-generated release notes
@@ -62,26 +65,29 @@ jobs:
           run-id: ${{ inputs.release-notes-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Normalize release notes filename
+        if: inputs.release-notes-run-id != ''
+        run: |
+          # Normalize to RELEASE_NOTES.md regardless of source filename
+          for f in release_notes.md release-notes.md RELEASE_NOTES.md; do
+            if [ -f "$f" ] && [ "$f" != "RELEASE_NOTES.md" ]; then
+              mv "$f" RELEASE_NOTES.md
+              break
+            fi
+          done
+
       - name: Generate release notes via git-iris
         if: inputs.release-notes-run-id == ''
         uses: hyperb1iss/git-iris@v2
         with:
+          command: release-notes
+          from: ${{ steps.prev-tag.outputs.tag }}
+          to: ${{ github.ref_name }}
+          version-name: ${{ github.ref_name }}
           provider: ${{ inputs.release-notes-provider }}
           model: ${{ inputs.release-notes-model }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-
-      - name: Read release notes
-        id: notes
-        run: |
-          if [ -f release_notes.md ]; then
-            {
-              echo "body<<EOF"
-              cat release_notes.md
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "body=Release ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          fi
+          output-file: RELEASE_NOTES.md
 
       - name: Download build artifacts
         if: inputs.attach-artifacts
@@ -94,8 +100,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body: ${{ steps.notes.outputs.body }}
+          name: Release ${{ github.ref_name }}
           draft: ${{ inputs.draft }}
+          prerelease: false
+          body_path: RELEASE_NOTES.md
           files: ${{ inputs.attach-artifacts && 'artifacts/*' || '' }}

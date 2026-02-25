@@ -76,6 +76,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -106,9 +107,15 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          # Get current version from Cargo.toml
-          current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+          # Prefer latest git tag, fall back to Cargo.toml
+          CURRENT_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          if [ -n "$CURRENT_TAG" ]; then
+            current="${CURRENT_TAG#v}"
+          else
+            current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+          fi
           echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "📌 Current version: $current (from tag: ${CURRENT_TAG:-none})"
 
           if [ -n "${{ inputs.version }}" ]; then
             new="${{ inputs.version }}"
@@ -120,6 +127,18 @@ jobs:
               patch) new="$major.$minor.$((patch + 1))" ;;
               *) echo "❌ Invalid bump type: ${{ inputs.bump }}"; exit 1 ;;
             esac
+          fi
+
+          # Validate format
+          if ! echo "$new" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version format: $new (expected: X.Y.Z)"
+            exit 1
+          fi
+
+          # Check tag doesn't already exist
+          if git tag -l "v$new" | grep -q "v$new"; then
+            echo "::error::Tag v$new already exists"
+            exit 1
           fi
 
           echo "new=$new" >> "$GITHUB_OUTPUT"
@@ -177,14 +196,19 @@ jobs:
       - name: Commit version bump
         if: ${{ !inputs.dry_run }}
         run: |
-          git add -A
-          git commit -m "chore: bump version to ${{ steps.version.outputs.new }}"
+          git add Cargo.toml Cargo.lock
+          if [ -n "${{ inputs.workspace-crates }}" ]; then
+            for crate in ${{ inputs.workspace-crates }}; do
+              [ -f "$crate/Cargo.toml" ] && git add "$crate/Cargo.toml"
+            done
+          fi
+          git commit -m "release: v${{ steps.version.outputs.new }}"
 
       - name: Create and push tag
         if: ${{ !inputs.dry_run }}
         run: |
-          git tag "v${{ steps.version.outputs.new }}"
-          git push origin HEAD
+          git tag -a "v${{ steps.version.outputs.new }}" -m "Release v${{ steps.version.outputs.new }}"
+          git push origin HEAD:${{ github.ref_name }}
           git push origin "v${{ steps.version.outputs.new }}"
 
       - name: Generate release notes
@@ -213,17 +237,23 @@ jobs:
 
       - name: Trigger downstream workflow
         if: ${{ !inputs.dry_run }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const inputs = { tag: 'v${{ steps.version.outputs.new }}' };
-            if (${{ inputs.pass-run-id }}) {
-              inputs.release_run_id = '${{ github.run_id }}';
-            }
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: '${{ inputs.cicd-workflow }}',
-              ref: 'v${{ steps.version.outputs.new }}',
-              inputs
-            });
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args="--ref v${{ steps.version.outputs.new }}"
+          if [ "${{ inputs.pass-run-id }}" = "true" ]; then
+            args="$args -f release_run_id=${{ github.run_id }}"
+          fi
+          gh workflow run "${{ inputs.cicd-workflow }}" $args
+
+      - name: Summary
+        run: |
+          echo "## Release ${{ inputs.dry_run && '[DRY RUN] ' || '' }}v${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Build and tests passed. Run again without dry-run to publish." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Version bumped: ${{ steps.version.outputs.current }} → ${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tag pushed: v${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Downstream workflow triggered: ${{ inputs.cicd-workflow }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
