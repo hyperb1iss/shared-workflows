@@ -250,23 +250,6 @@ action versions, bug fixes.
 
 ---
 
-## Consumers
-
-| Repo                        | Workflows Used                                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **opaline**                 | rust-ci, rust-publish, github-release                                                                      |
-| **silkprint**               | rust-ci, rust-publish, github-release                                                                      |
-| **unifi-cli**               | rust-ci, rust-publish, rust-release, rust-build-artifacts, github-release, homebrew-update                 |
-| **git-iris**                | rust-ci, rust-publish, rust-release, rust-build-artifacts, github-release, homebrew-update, docker-publish |
-| **droidmind**               | python-ci, python-publish, docs-deploy, docker-publish                                                     |
-| **sibyl**                   | python-ci, docs-deploy                                                                                     |
-| **uchroma**                 | python-ci, python-publish                                                                                  |
-| **signalrgb-homeassistant** | python-ci, python-publish                                                                                  |
-| **haven**                   | python-ci, moon-ci                                                                                         |
-| **prezzer**                 | python-ci, moon-ci                                                                                         |
-
----
-
 ## Development
 
 ```bash
