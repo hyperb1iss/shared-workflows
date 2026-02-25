@@ -60,6 +60,10 @@ on:
         description: 'Pass release_run_id to downstream'
         type: boolean
         default: false
+      patch-workspace-dep-versions:
+        description: 'Also patch version pins for path deps in root Cargo.toml'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -158,6 +162,13 @@ jobs:
               echo "📦 Patched $crate_toml"
             fi
           done
+
+      - name: Patch workspace dependency version pins
+        if: inputs.patch-workspace-dep-versions
+        run: |
+          # Update version = "..." on lines that also contain path = "..." (workspace path deps)
+          sed -i '/path = "/s/version = "[^"]*"/version = "${{ steps.version.outputs.new }}"/' Cargo.toml
+          echo "📦 Updated workspace dependency version pins"
 
       - name: Update lockfile
         run: cargo update ${{ inputs.cargo-update-flag }}

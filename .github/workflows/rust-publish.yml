@@ -14,6 +14,10 @@ on:
         description: 'Seconds between workspace crate publishes'
         type: number
         default: 30
+      system-deps:
+        description: 'apt packages needed for build during publish'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -31,6 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        if: inputs.system-deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.system-deps }}
 
       - uses: dtolnay/rust-toolchain@stable
 
