@@ -1,0 +1,22 @@
+# ✨ CI — shared-workflows
+# Lint YAML and Markdown on every push and PR.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check formatting
+        run: npx prettier --check "**/*.{yml,yaml,md}"
