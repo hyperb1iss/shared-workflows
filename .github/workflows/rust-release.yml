@@ -40,10 +40,6 @@ on:
         description: 'Use nextest for release validation'
         type: boolean
         default: true
-      cargo-update-flag:
-        description: 'Flag for cargo update (-w or -p crate-name)'
-        type: string
-        default: '-w'
       generate-release-notes:
         description: 'Generate + upload release notes artifact'
         type: boolean
@@ -171,7 +167,7 @@ jobs:
           echo "📦 Updated workspace dependency version pins"
 
       - name: Update lockfile
-        run: cargo update ${{ inputs.cargo-update-flag }}
+        run: cargo generate-lockfile
 
       - name: Build
         run: >-

@@ -261,7 +261,6 @@ Version bump → tag → trigger CI/CD. Each consumer keeps a thin `release.yml`
 | `workspace-crates`       | string  | `''`         | Crates for version patching       |
 | `all-features`           | boolean | `true`       | `--all-features` for build/test   |
 | `nextest`                | boolean | `true`       | Use nextest for validation        |
-| `cargo-update-flag`      | string  | `'-w'`       | Flag for `cargo update`           |
 | `generate-release-notes` | boolean | `false`      | Generate via git-iris             |
 | `generate-changelog`     | boolean | `false`      | Update CHANGELOG.md               |
 | `cicd-workflow`          | string  | `'cicd.yml'` | Downstream workflow to trigger    |
