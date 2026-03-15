@@ -41,16 +41,16 @@ docs/                        # Documentation
 ```
 actions/checkout@v6          dtolnay/rust-toolchain@stable
 actions/setup-node@v6        Swatinem/rust-cache@v2
-actions/setup-python@v5      dorny/paths-filter@v3
+actions/setup-python@v6      dorny/paths-filter@v3
 actions/configure-pages@v5   taiki-e/install-action@v2
-actions/upload-pages-artifact@v3  EmbarkStudios/cargo-deny-action@v2
+actions/upload-pages-artifact@v4  EmbarkStudios/cargo-deny-action@v2
 actions/deploy-pages@v4      pnpm/action-setup@v4
-actions/upload-artifact@v4   rust-lang/crates-io-auth-action@v1
-actions/download-artifact@v4 softprops/action-gh-release@v2
-astral-sh/setup-uv@v5       hyperb1iss/git-iris@v2
-docker/setup-buildx-action@v3    docker/login-action@v3
-docker/build-push-action@v6      moonrepo/setup-toolchain@v0
-docker/setup-qemu-action@v3     actions/github-script@v7
+actions/upload-artifact@v7   rust-lang/crates-io-auth-action@v1
+actions/download-artifact@v8 softprops/action-gh-release@v2
+astral-sh/setup-uv@v7       hyperb1iss/git-iris@v2
+docker/setup-buildx-action@v4    docker/login-action@v4
+docker/build-push-action@v7      moonrepo/setup-toolchain@v0
+docker/setup-qemu-action@v4     actions/github-script@v8
 pypa/gh-action-pypi-publish@release/v1
 ```
 

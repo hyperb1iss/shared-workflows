@@ -58,7 +58,7 @@ jobs:
 
       - name: Download pre-generated release notes
         if: inputs.release-notes-run-id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-notes
           path: .
@@ -91,7 +91,7 @@ jobs:
 
       - name: Download build artifacts
         if: inputs.attach-artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: ${{ inputs.artifact-pattern }}
           path: artifacts/
