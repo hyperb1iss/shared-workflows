@@ -223,7 +223,7 @@ jobs:
         uses: hyperb1iss/git-iris@v2
         with:
           provider: anthropic
-          model: claude-sonnet-4-5-20250929
+          model: claude-opus-4-6
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Upload release notes artifact
@@ -237,7 +237,7 @@ jobs:
         if: ${{ !inputs.dry_run && inputs.generate-changelog }}
         run: |
           cargo install git-iris || true
-          git-iris changelog --provider anthropic --model claude-sonnet-4-5-20250929
+          git-iris changelog --provider anthropic --model claude-opus-4-6
           git add CHANGELOG.md
           git commit -m "docs: update changelog for v${{ steps.version.outputs.new }}"
           git push origin HEAD
