@@ -1,5 +1,6 @@
 # ✨ Python Publish — shared-workflows
 # Publish to PyPI via trusted publishing (OIDC).
+# Supports single-package and multi-package workspace builds.
 
 name: Python Publish
 
@@ -7,9 +8,17 @@ on:
   workflow_call:
     inputs:
       package-dir:
-        description: 'Directory containing pyproject.toml'
+        description: 'Directory containing pyproject.toml (single-package mode)'
         type: string
         default: '.'
+      package-names:
+        description: 'Space-separated package names for uv build --package (workspace mode)'
+        type: string
+        default: ''
+      checkout-ref:
+        description: 'Git ref to checkout (empty = caller ref)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -24,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -32,11 +43,21 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Build workspace packages
+        if: inputs.package-names != ''
+        run: |
+          for pkg in ${{ inputs.package-names }}; do
+            echo "Building $pkg..."
+            uv build --package "$pkg" --out-dir dist/
+          done
+          ls -la dist/
+
       - name: Build package
+        if: inputs.package-names == ''
         working-directory: ${{ inputs.package-dir }}
         run: uv build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: ${{ inputs.package-dir }}/dist/
+          packages-dir: ${{ inputs.package-names != '' && 'dist/' || format('{0}/dist/', inputs.package-dir) }}

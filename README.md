@@ -351,19 +351,36 @@ ci:
 
 ### python-publish.yml
 
-Publish to PyPI via OIDC trusted publishing.
+Publish to PyPI via OIDC trusted publishing. Supports single-package and multi-package workspace
+builds.
 
-| Input         | Type   | Default | Description                   |
-| ------------- | ------ | ------- | ----------------------------- |
-| `package-dir` | string | `'.'`   | Directory with pyproject.toml |
+| Input            | Type   | Default | Description                                        |
+| ---------------- | ------ | ------- | -------------------------------------------------- |
+| `package-dir`    | string | `'.'`   | Directory with pyproject.toml (single-package mode) |
+| `package-names`  | string | `''`    | Space-separated names for `uv build --package`     |
+| `checkout-ref`   | string | `''`    | Git ref to checkout (empty = caller ref)           |
 
-**Example:**
+> **OIDC Note:** When using this reusable workflow, configure PyPI trusted publishing to point at
+> `hyperb1iss/shared-workflows/.github/workflows/python-publish.yml`, not the caller repo.
+
+**Examples:**
 
 ```yaml
+# Single package (default)
 publish:
   if: startsWith(github.ref, 'refs/tags/')
   uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
   secrets: inherit
+
+# Workspace with multiple packages
+publish:
+  uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
+  with:
+    package-names: "sibyl-core sibyl-dev"
+    checkout-ref: v0.1.0
+  permissions:
+    contents: read
+    id-token: write
 ```
 
 ---
@@ -473,14 +490,17 @@ homebrew:
 Build and push Docker images to DockerHub, GHCR, or both. Supports dry-run mode (`push: false`)
 without requiring registry credentials.
 
-| Input        | Type    | Default         | Description                       |
-| ------------ | ------- | --------------- | --------------------------------- |
-| `image-name` | string  | **required**    | e.g., `hyperb1iss/git-iris`       |
-| `registry`   | string  | `'docker.io'`   | `docker.io`, `ghcr.io`, or both   |
-| `platforms`  | string  | `'linux/amd64'` | Docker buildx platforms           |
-| `push`       | boolean | `true`          | Actually push (false for dry-run) |
-| `dockerfile` | string  | `'Dockerfile'`  | Path to Dockerfile                |
-| `build-args` | string  | `''`            | Docker build arguments            |
+| Input           | Type    | Default         | Description                                     |
+| --------------- | ------- | --------------- | ----------------------------------------------- |
+| `image-name`    | string  | **required**    | e.g., `hyperb1iss/git-iris`                     |
+| `registry`      | string  | `'docker.io'`   | `docker.io`, `ghcr.io`, or both                 |
+| `platforms`     | string  | `'linux/amd64'` | Docker buildx platforms                         |
+| `push`          | boolean | `true`          | Actually push (false for dry-run)               |
+| `dockerfile`    | string  | `'Dockerfile'`  | Path to Dockerfile                              |
+| `build-args`    | string  | `''`            | Docker build arguments                          |
+| `version`       | string  | `''`            | Version override (empty = from GITHUB_REF_NAME) |
+| `checkout-ref`  | string  | `''`            | Git ref to checkout (empty = caller ref)        |
+| `build-context` | string  | `'.'`           | Docker build context directory                  |
 
 **Examples:**
 
@@ -500,6 +520,17 @@ docker:
     registry: 'docker.io, ghcr.io'
     platforms: 'linux/amd64,linux/arm64'
   secrets: inherit
+
+# GHCR with version override (monorepo publish)
+docker-api:
+  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
+  with:
+    image-name: hyperb1iss/sibyl-api
+    registry: ghcr.io
+    dockerfile: apps/api/Dockerfile
+    version: v0.1.0
+    checkout-ref: v0.1.0
+  secrets: inherit
 ```
 
 ---
@@ -508,24 +539,50 @@ docker:
 
 ### moon-ci.yml
 
-moonrepo workspace CI for polyglot projects (Node + Python).
+Polyglot moonrepo workspace CI (Node + Python) with uv + pnpm. Installs proto toolchain, removes
+shadowing proto shims so the native setup-* installs win, and caches `.moon/cache` (save-if-main).
 
-| Input            | Type   | Default   | Description                |
-| ---------------- | ------ | --------- | -------------------------- |
-| `node-version`   | string | `'24'`    | Node.js version            |
-| `python-version` | string | `'3.13'`  | Python version             |
-| `pnpm-version`   | string | `'10'`    | pnpm version               |
-| `moon-tasks`     | string | `'check'` | Space-separated moon tasks |
+| Input            | Type    | Default    | Description                                    |
+| ---------------- | ------- | ---------- | ---------------------------------------------- |
+| `system-deps`    | string  | `''`       | apt packages to install                        |
+| `uv-sync`        | boolean | `false`    | Run `uv sync` before tasks                     |
+| `uv-sync-args`   | string  | `''`       | Extra uv sync args (e.g., `--all-extras`)      |
+| `env-vars`       | string  | `''`       | `KEY=VALUE` lines injected into `$GITHUB_ENV`  |
+| `moon-commands`  | string  | `''`       | Newline-separated moon commands (preferred)    |
+| `moon-tasks`     | string  | `'check'`  | Space-separated tasks for `moon ci` (compat)   |
+| `node-version`   | string  | `'24'`     | Node.js version                                |
+| `python-version` | string  | `'3.13'`   | Python version                                 |
+| `pnpm-version`   | string  | `'10'`     | pnpm version                                   |
 
-**Example:**
+**Command resolution:** If `moon-commands` is set, each line is executed via `bash -c` (must start
+with `moon`). If empty, falls back to `moon ci ${{ inputs.moon-tasks }}`.
+
+**Examples:**
 
 ```yaml
+# Simple — backward-compatible
 ci:
   uses: hyperb1iss/shared-workflows/.github/workflows/moon-ci.yml@v1
   with:
     moon-tasks: 'check lint test'
   secrets: inherit
+
+# Polyglot with uv sync and explicit commands
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/moon-ci.yml@v1
+  with:
+    uv-sync: true
+    uv-sync-args: '--all-extras'
+    moon-commands: |
+      moon run :lint --query "language=[python, javascript]"
+      moon run :typecheck --query "language=[python, javascript]"
+      moon run :test --query "language=[python, javascript]"
+  secrets: inherit
 ```
+
+> **Need service containers?** Reusable workflows can't attach services conditionally, and
+> project-specific service topology (FalkorDB, Temporal, Qdrant, …) doesn't generalize. Define
+> services directly in the caller repo and inline the moon setup there.
 
 ---
 

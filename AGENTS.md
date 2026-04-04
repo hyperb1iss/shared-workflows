@@ -23,8 +23,6 @@ should go from 50-100+ lines of workflow YAML to ~10 lines calling a shared work
   python-publish.yml         # Publish to PyPI (trusted publishing)
   moon-ci.yml                # moonrepo workspace CI
 docs/                        # Documentation
-  HANDOFF.md                 # Implementation guide (start here)
-  AUDIT.md                   # Full workflow audit across all projects
 ```
 
 ## Key Design Decisions
@@ -56,16 +54,16 @@ pypa/gh-action-pypi-publish@release/v1
 
 ## Workflow Quick Reference
 
-| Workflow               | Key Inputs                                               | Consumers                               |
-| ---------------------- | -------------------------------------------------------- | --------------------------------------- |
-| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint |
-| `rust-publish`         | crates, publish-delay                                    | opaline, unifi-cli, git-iris, silkprint |
-| `rust-release`         | version/bump, workspace-crates, cicd-workflow            | opaline, unifi-cli, git-iris, silkprint |
-| `rust-build-artifacts` | binaries, targets, build-packages                        | unifi-cli, git-iris                     |
-| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                      | 6+ repos                                |
-| `github-release`       | attach-artifacts, release-notes-run-id                   | 6+ repos                                |
-| `homebrew-update`      | formula-name, binary-names                               | unifi-cli, git-iris                     |
-| `docker-publish`       | image-name, registry, platforms                          | git-iris, droidmind                     |
-| `python-ci`            | python-versions, services, rust-toolchain                | 6+ repos                                |
-| `python-publish`       | package-dir                                              | droidmind, sibyl, uchroma, signalrgb-ha |
-| `moon-ci`              | moon-tasks                                               | haven, prezzer                          |
+| Workflow               | Key Inputs                                               | Consumers                                      |
+| ---------------------- | -------------------------------------------------------- | ---------------------------------------------- |
+| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-publish`         | crates, publish-delay                                    | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-release`         | version/bump, workspace-crates, cicd-workflow            | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-build-artifacts` | binaries, targets, build-packages                        | unifi-cli, git-iris                            |
+| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                      | sibyl, 6+ repos                                |
+| `github-release`       | attach-artifacts, release-notes-run-id                   | 6+ repos                                       |
+| `homebrew-update`      | formula-name, binary-names                               | unifi-cli, git-iris                            |
+| `docker-publish`       | image-name, registry, version, checkout-ref              | sibyl, haven, git-iris, droidmind              |
+| `python-ci`            | python-versions, services, rust-toolchain                | 6+ repos                                       |
+| `python-publish`       | package-names, checkout-ref, package-dir                 | sibyl, haven, droidmind, uchroma, signalrgb-ha |
+| `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps            | haven, prezzer                                 |

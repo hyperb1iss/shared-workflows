@@ -30,13 +30,25 @@ on:
         description: 'Docker build arguments'
         type: string
         default: ''
+      version:
+        description: 'Version override (empty = extract from GITHUB_REF_NAME)'
+        type: string
+        default: ''
+      checkout-ref:
+        description: 'Git ref to checkout (empty = caller ref)'
+        type: string
+        default: ''
+      build-context:
+        description: 'Docker build context directory'
+        type: string
+        default: '.'
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: docker-${{ github.ref_name }}
+  group: docker-${{ inputs.image-name }}-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.ref }}
 
       - name: Set up QEMU
         if: contains(inputs.platforms, ',') || contains(inputs.platforms, 'arm')
@@ -70,7 +84,12 @@ jobs:
       - name: Extract version tag
         id: meta
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          if [ -n "${{ inputs.version }}" ]; then
+            version="${{ inputs.version }}"
+            version="${version#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
           # Build tag list based on registries
@@ -90,7 +109,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ inputs.build-context }}
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platforms }}
           push: ${{ inputs.push }}
