@@ -111,6 +111,11 @@ jobs:
 
             def install
               [${binaries}].each { |b| bin.install b }
+              # Optional support payloads — shipped by projects that need them
+              # (terminfo, shell integration, man pages, themes, completions).
+              # Absent for simple binary-only projects; safely skipped.
+              share.install Dir["share/*"] if Dir.exist?("share")
+              etc.install Dir["etc/*"] if Dir.exist?("etc")
             end
 
             test do

@@ -469,6 +469,19 @@ release. Generates CamelCase Ruby class names automatically (e.g., `git-iris` â†
 | `homepage`     | string | **required**                | Formula homepage URL         |
 | `binary-names` | string | **required**                | Space-separated binaries     |
 
+**Artifact contract:** callers must upload one artifact per target, named
+`binaries-linux-amd64` and/or `binaries-macos-arm64`, containing the raw
+binaries at the root. The workflow tars each artifact itself, uploads the
+tarball as a release asset, and generates a formula that runs `bin.install`
+for each name in `binary-names`.
+
+**Optional support payloads:** if the artifact also contains a top-level
+`share/` directory (terminfo, shell integration, man pages, themes,
+completions) or `etc/` directory (system config), the generated formula
+will install them into Homebrew's prefix automatically. Projects shipping
+only binaries can ignore this â€” the install steps are guarded by
+`Dir.exist?` checks.
+
 **Requires secret:** `HOMEBREW_TAP_TOKEN`
 
 **Example:**
