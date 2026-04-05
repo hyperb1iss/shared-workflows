@@ -60,6 +60,16 @@ on:
         description: 'Also patch version pins for path deps in root Cargo.toml'
         type: boolean
         default: false
+      version-files:
+        description: >-
+          Newline-separated list of extra files to patch with the new version.
+          Supports JSON (.json) and YAML frontmatter (.md, .yml, .yaml).
+          JSON files patch the top-level "version" field (or nested via jq path).
+          YAML frontmatter patches the "version:" field in --- blocks.
+          Format: one file path per line, optionally followed by a jq expression
+          for JSON (e.g., ".claude-plugin/marketplace.json|.plugins[0].version").
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -166,6 +176,44 @@ jobs:
           sed -i '/path = "/s/version = "[^"]*"/version = "${{ steps.version.outputs.new }}"/' Cargo.toml
           echo "📦 Updated workspace dependency version pins"
 
+      - name: Patch extra version files
+        if: inputs.version-files != ''
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new }}"
+          echo "${{ inputs.version-files }}" | while IFS= read -r entry; do
+            # Skip empty lines
+            [ -z "$entry" ] && continue
+
+            # Split on | for optional jq path (default: .version)
+            file="${entry%%|*}"
+            jq_path="${entry#*|}"
+            [ "$jq_path" = "$file" ] && jq_path=".version"
+
+            # Trim whitespace
+            file="$(echo "$file" | xargs)"
+            jq_path="$(echo "$jq_path" | xargs)"
+
+            if [ ! -f "$file" ]; then
+              echo "::warning::Version file not found: $file"
+              continue
+            fi
+
+            case "$file" in
+              *.json)
+                jq "$jq_path = \"$NEW_VERSION\"" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+                echo "📦 Patched $file ($jq_path)"
+                ;;
+              *.md|*.yml|*.yaml)
+                # Patch "version: X.Y.Z" or 'version: "X.Y.Z"' in YAML frontmatter
+                sed -i "0,/^version:.*/s/^version:.*/version: \"$NEW_VERSION\"/" "$file"
+                echo "📦 Patched $file (frontmatter)"
+                ;;
+              *)
+                echo "::warning::Unsupported file type: $file"
+                ;;
+            esac
+          done
+
       - name: Update lockfile
         run: cargo generate-lockfile
 
@@ -207,6 +255,13 @@ jobs:
           if [ -n "${{ inputs.workspace-crates }}" ]; then
             for crate in ${{ inputs.workspace-crates }}; do
               [ -f "$crate/Cargo.toml" ] && git add "$crate/Cargo.toml"
+            done
+          fi
+          if [ -n "${{ inputs.version-files }}" ]; then
+            echo "${{ inputs.version-files }}" | while IFS= read -r entry; do
+              file="${entry%%|*}"
+              file="$(echo "$file" | xargs)"
+              [ -n "$file" ] && [ -f "$file" ] && git add "$file"
             done
           fi
           git commit -m "release: v${{ steps.version.outputs.new }}"
