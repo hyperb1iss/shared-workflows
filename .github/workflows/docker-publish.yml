@@ -1,4 +1,4 @@
-# ✨ Docker Publish — shared-workflows
+# 🐳 Docker Publish — shared-workflows
 # Build and push Docker images.
 
 name: Docker Publish

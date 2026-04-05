@@ -1,4 +1,4 @@
-# ✨ Rust Release — shared-workflows
+# 🏷️ Rust Release — shared-workflows
 # Version bump → tag → trigger downstream CI/CD.
 # Each consuming repo keeps a thin release.yml with workflow_dispatch inputs
 # that calls this shared workflow via workflow_call.

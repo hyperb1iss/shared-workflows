@@ -1,4 +1,4 @@
-# ✨ Rust CI — shared-workflows
+# 🦀 Rust CI — shared-workflows
 # Lint, test, and audit for Rust projects.
 # Replaces 60-100 lines of duplicated CI YAML with ~15 in each consumer.
 

@@ -1,4 +1,4 @@
-# ✨ Python CI — shared-workflows
+# 🐍 Python CI — shared-workflows
 # Lint + test for Python projects using the Astral stack (uv, ruff).
 
 name: Python CI

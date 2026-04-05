@@ -1,4 +1,4 @@
-# ✨ shared-workflows
+# ⚙️ shared-workflows
 
 # Format all YAML and Markdown
 format:

@@ -1,4 +1,4 @@
-# ✨ Rust Publish — shared-workflows
+# 📦 Rust Publish — shared-workflows
 # Publishes crates to crates.io via OIDC trusted publishing.
 
 name: Rust Publish

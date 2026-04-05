@@ -22,6 +22,7 @@ should go from 50-100+ lines of workflow YAML to ~10 lines calling a shared work
   python-ci.yml              # Lint, test for Python (uv) projects
   python-publish.yml         # Publish to PyPI (trusted publishing)
   moon-ci.yml                # moonrepo workspace CI
+  release-tags.yml           # Auto-move major version tag on push
 docs/                        # Documentation
 ```
 
@@ -48,7 +49,7 @@ actions/download-artifact@v8 softprops/action-gh-release@v2
 astral-sh/setup-uv@v7       hyperb1iss/git-iris@v2
 docker/setup-buildx-action@v4    docker/login-action@v4
 docker/build-push-action@v7      moonrepo/setup-toolchain@v0
-docker/setup-qemu-action@v4     actions/github-script@v8
+docker/setup-qemu-action@v4     actions/cache@v4
 pypa/gh-action-pypi-publish@release/v1
 ```
 
@@ -57,13 +58,14 @@ pypa/gh-action-pypi-publish@release/v1
 | Workflow               | Key Inputs                                               | Consumers                                      |
 | ---------------------- | -------------------------------------------------------- | ---------------------------------------------- |
 | `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-publish`         | crates, publish-delay                                    | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-release`         | version/bump, workspace-crates, cicd-workflow            | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-publish`         | crates, publish-delay, system-deps                       | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-release`         | version/bump, workspace-crates, version-files            | opaline, unifi-cli, git-iris, silkprint        |
 | `rust-build-artifacts` | binaries, targets, build-packages                        | unifi-cli, git-iris                            |
 | `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                      | sibyl, 6+ repos                                |
 | `github-release`       | attach-artifacts, release-notes-run-id                   | 6+ repos                                       |
 | `homebrew-update`      | formula-name, binary-names                               | unifi-cli, git-iris                            |
 | `docker-publish`       | image-name, registry, version, checkout-ref              | sibyl, haven, git-iris, droidmind              |
-| `python-ci`            | python-versions, services, rust-toolchain                | 6+ repos                                       |
+| `python-ci`            | python-version, ruff, pytest, rust-toolchain             | 6+ repos                                       |
 | `python-publish`       | package-names, checkout-ref, package-dir                 | sibyl, haven, droidmind, uchroma, signalrgb-ha |
 | `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps            | haven, prezzer                                 |
+| `release-tags`         | _(internal, no inputs)_                                  | shared-workflows                               |

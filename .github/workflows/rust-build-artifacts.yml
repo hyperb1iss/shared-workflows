@@ -1,4 +1,4 @@
-# ✨ Rust Build Artifacts — shared-workflows
+# 🔨 Rust Build Artifacts — shared-workflows
 # Cross-platform binary builds with optional .deb/.rpm packaging.
 
 name: Rust Build Artifacts
