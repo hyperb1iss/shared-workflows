@@ -1,0 +1,73 @@
+# 🏷️ Release Tags — shared-workflows
+# Auto-move the latest major version tag (v1, v2, …) to the tip of main.
+#
+# Consumers pin to @v1, @v2, etc. This workflow fast-forwards the highest
+# existing major tag to every main push, so non-breaking changes land
+# immediately for everyone without any release ceremony.
+#
+# BREAKING CHANGE WORKFLOW:
+#   1. Manually cut the next major tag BEFORE pushing the breaking change:
+#        git tag -a v2 -m "v2: describe the break"
+#        git push origin v2
+#   2. Push the breaking change as normal — this workflow now moves v2,
+#      leaving v1 frozen on its last commit.
+#
+# First-time setup:
+#   git tag -a v1 -m "Initial v1 release"
+#   git push origin v1
+# After that, this workflow takes over.
+
+name: Release Tags
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tags
+  cancel-in-progress: false
+
+jobs:
+  update-major-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward latest major tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Find the highest v<N> tag (ignores v1.2.3-style semver tags)
+          latest_major=$(git tag -l 'v*' | grep -E '^v[0-9]+$' | sort -V | tail -1 || true)
+
+          if [ -z "$latest_major" ]; then
+            echo "::notice::No major tag found yet — cut v1 manually to bootstrap:"
+            echo "  git tag -a v1 -m 'Initial v1 release' && git push origin v1"
+            exit 0
+          fi
+
+          target_sha="$(git rev-parse HEAD)"
+          current_sha="$(git rev-parse "$latest_major")"
+
+          if [ "$target_sha" = "$current_sha" ]; then
+            echo "$latest_major already at $target_sha — nothing to do"
+            exit 0
+          fi
+
+          echo "Moving $latest_major: $current_sha → $target_sha"
+          git tag -f "$latest_major" "$target_sha"
+          git push origin "$latest_major" --force
+
+          {
+            echo "## 🏷️ Tag updated"
+            echo ""
+            echo "\`$latest_major\` → \`$target_sha\`"
+            echo ""
+            echo "Previous: \`$current_sha\`"
+          } >> "$GITHUB_STEP_SUMMARY"
