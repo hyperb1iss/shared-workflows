@@ -259,10 +259,11 @@ jobs:
           fi
           if [ -n "${{ inputs.version-files }}" ]; then
             echo "${{ inputs.version-files }}" | while IFS= read -r entry; do
+              entry="$(echo "$entry" | xargs)"
+              [ -z "$entry" ] && continue
               file="${entry%%|*}"
-              file="$(echo "$file" | xargs)"
               [ -n "$file" ] && [ -f "$file" ] && git add "$file"
-            done
+            done || true
           fi
           git commit -m "release: v${{ steps.version.outputs.new }}"
 
