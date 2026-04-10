@@ -70,6 +70,13 @@ on:
           for JSON (e.g., ".claude-plugin/marketplace.json|.plugins[0].version").
         type: string
         default: ''
+    secrets:
+      release-token:
+        description: 'PAT with contents:write from a repo admin — bypasses branch protection for the version-bump push'
+        required: false
+      ANTHROPIC_API_KEY:
+        description: 'Anthropic API key for git-iris release notes generation'
+        required: false
 
 permissions:
   contents: write
@@ -91,7 +98,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.release-token || secrets.GITHUB_TOKEN }}
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
