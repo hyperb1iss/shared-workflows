@@ -9,7 +9,7 @@ on:
       release-notes-model:
         description: 'AI model for git-iris'
         type: string
-        default: 'claude-opus-4-6'
+        default: 'claude-opus-4-7'
       release-notes-provider:
         description: 'LLM provider'
         type: string

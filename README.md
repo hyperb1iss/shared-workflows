@@ -423,7 +423,7 @@ Creates a GitHub Release with AI-generated notes from
 
 | Input                    | Type    | Default             | Description                      |
 | ------------------------ | ------- | ------------------- | -------------------------------- |
-| `release-notes-model`    | string  | `'claude-opus-4-6'` | AI model for release notes       |
+| `release-notes-model`    | string  | `'claude-opus-4-7'` | AI model for release notes       |
 | `release-notes-provider` | string  | `'anthropic'`       | LLM provider                     |
 | `attach-artifacts`       | boolean | `false`             | Attach build artifacts           |
 | `artifact-pattern`       | string  | `'*'`               | Glob for artifacts to attach     |
