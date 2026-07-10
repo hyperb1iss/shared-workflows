@@ -58,19 +58,19 @@ pypa/gh-action-pypi-publish@release/v1
 
 ## Workflow Quick Reference
 
-| Workflow               | Key Inputs                                               | Consumers                                      |
-| ---------------------- | -------------------------------------------------------- | ---------------------------------------------- |
-| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-publish`         | crates, publish-delay, system-deps                       | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-release`         | version/bump, workspace-crates, version-files            | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-build-artifacts` | binaries, targets, build-packages                        | unifi-cli, git-iris                            |
-| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                      | sibyl, 6+ repos                                |
-| `github-release`       | attach-artifacts, release-notes-run-id                   | 6+ repos                                       |
-| `homebrew-update`      | formula-name, binary-names                               | unifi-cli, git-iris                            |
-| `docker-publish`       | image-name, registry, version, checkout-ref              | sibyl, haven, git-iris, droidmind              |
-| `python-ci`            | python-version, ruff, pytest, rust-toolchain             | 6+ repos                                       |
-| `python-publish`       | package-names, checkout-ref, package-dir                 | sibyl, haven, droidmind, uchroma, signalrgb-ha |
-| `bun-ci`               | working-directory, check-script, build-script            | prezzer                                        |
-| `npm-publish`          | package-dirs, checkout-ref, tag, dry-run                 | prezzer                                        |
-| `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps            | haven                                          |
-| `release-tags`         | _(internal, no inputs)_                                  | shared-workflows                               |
+| Workflow               | Key Inputs                                                 | Consumers                                      |
+| ---------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
+| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt   | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-publish`         | crates, publish-delay, system-deps                         | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-release`         | version/bump, workspace-crates, version-files              | opaline, unifi-cli, git-iris, silkprint        |
+| `rust-build-artifacts` | binaries, targets, build-packages                          | unifi-cli, git-iris                            |
+| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                        | sibyl, 6+ repos                                |
+| `github-release`       | attach-artifacts, release-notes-run-id                     | 6+ repos                                       |
+| `homebrew-update`      | formula-name, binary-names                                 | unifi-cli, git-iris                            |
+| `docker-publish`       | image-name, registry, version, checkout-ref                | sibyl, haven, git-iris, droidmind              |
+| `python-ci`            | python-version, ruff, pytest, rust-toolchain               | 6+ repos                                       |
+| `python-publish`       | package-names, checkout-ref, package-dir                   | sibyl, haven, droidmind, uchroma, signalrgb-ha |
+| `bun-ci`               | bun-version, working-directory, check-script, build-script | prezzer                                        |
+| `npm-publish`          | bun-version, package-dirs, checkout-ref, tag, dry-run      | prezzer                                        |
+| `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps              | haven                                          |
+| `release-tags`         | _(internal, no inputs)_                                    | shared-workflows                               |
