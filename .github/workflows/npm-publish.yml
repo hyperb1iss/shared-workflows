@@ -83,8 +83,8 @@ jobs:
           while IFS= read -r package_dir; do
             [ -z "$package_dir" ] && continue
             if [ "$DRY_RUN" = 'true' ]; then
-              npm publish "$package_dir" --access public --tag "$NPM_TAG" --dry-run
+              npm publish "./$package_dir" --access public --tag "$NPM_TAG" --dry-run
             else
-              npm publish "$package_dir" --access public --tag "$NPM_TAG"
+              npm publish "./$package_dir" --access public --tag "$NPM_TAG"
             fi
           done <<< "$PACKAGE_DIRS"
