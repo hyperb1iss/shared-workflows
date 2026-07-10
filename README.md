@@ -379,7 +379,7 @@ publish:
 publish:
   uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
   with:
-    package-names: "sibyl-core sibyl-dev"
+    package-names: 'sibyl-core sibyl-dev'
     checkout-ref: v0.1.0
   permissions:
     contents: read
@@ -556,12 +556,12 @@ Installs a Bun workspace from its committed lockfile, runs the repository's unif
 then builds it. `oven-sh/setup-bun` resolves the version from `packageManager` or `engines.bun` in
 the caller's root `package.json`.
 
-| Input               | Type    | Default   | Description                                  |
-| ------------------- | ------- | --------- | -------------------------------------------- |
-| `working-directory` | string  | `'.'`     | Workspace root                               |
+| Input               | Type    | Default   | Description                                 |
+| ------------------- | ------- | --------- | ------------------------------------------- |
+| `working-directory` | string  | `'.'`     | Workspace root                              |
 | `check-script`      | string  | `'check'` | Package script containing all quality gates |
 | `build-script`      | string  | `'build'` | Package script producing release artifacts  |
-| `run-build`         | boolean | `true`    | Run the build after checks pass              |
+| `run-build`         | boolean | `true`    | Run the build after checks pass             |
 
 ```yaml
 ci:
