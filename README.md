@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Reusable GitHub Actions for the hyperb1iss ecosystem</strong><br>
-  <sub>✦ 12 workflows · 15+ consumers · one source of truth ✦</sub>
+  <sub>✦ 14 workflows · 15+ consumers · one source of truth ✦</sub>
 </p>
 
 <p align="center">
@@ -86,6 +86,8 @@ jobs:
 | 🐳 `docker-publish`       | Common   | Build + push Docker images              |
 | 🐍 `python-ci`            | Python   | Ruff lint, pytest, multi-version matrix |
 | 📦 `python-publish`       | Python   | Publish to PyPI (OIDC)                  |
+| 🥟 `bun-ci`               | Bun      | Check and build Bun workspaces          |
+| 📦 `npm-publish`          | Bun      | Publish npm packages (OIDC)             |
 | 🌙 `moon-ci`              | Monorepo | moonrepo workspace CI                   |
 | 🏷️ `release-tags`         | Internal | Auto-move major version tag on push     |
 
@@ -546,6 +548,59 @@ docker-api:
 
 ---
 
+## Bun Workflows
+
+### bun-ci.yml
+
+Installs a Bun workspace from its committed lockfile, runs the repository's unified check script,
+then builds it. `oven-sh/setup-bun` resolves the version from `packageManager` or `engines.bun` in
+the caller's root `package.json`.
+
+| Input               | Type    | Default   | Description                                  |
+| ------------------- | ------- | --------- | -------------------------------------------- |
+| `working-directory` | string  | `'.'`     | Workspace root                               |
+| `check-script`      | string  | `'check'` | Package script containing all quality gates |
+| `build-script`      | string  | `'build'` | Package script producing release artifacts  |
+| `run-build`         | boolean | `true`    | Run the build after checks pass              |
+
+```yaml
+ci:
+  uses: hyperb1iss/shared-workflows/.github/workflows/bun-ci.yml@v1
+  secrets: inherit
+```
+
+### npm-publish.yml
+
+Builds with Bun, then publishes one or more package directories to npm through trusted publishing.
+Packages are published in the order listed by `package-dirs`.
+
+| Input          | Type    | Default    | Description                                  |
+| -------------- | ------- | ---------- | -------------------------------------------- |
+| `package-dirs` | string  | `'.'`      | Newline-separated package directories        |
+| `checkout-ref` | string  | `''`       | Git ref to checkout                          |
+| `check-script` | string  | `'check'`  | Root release-verification script             |
+| `build-script` | string  | `'build'`  | Root package-build script                    |
+| `tag`          | string  | `'latest'` | npm distribution tag                         |
+| `dry-run`      | boolean | `false`    | Validate package contents without publishing |
+
+```yaml
+publish:
+  uses: hyperb1iss/shared-workflows/.github/workflows/npm-publish.yml@v1
+  permissions:
+    contents: read
+    id-token: write
+  with:
+    package-dirs: |
+      packages/library
+      packages/create-library
+  secrets: inherit
+```
+
+Configure npm's trusted publisher against the caller workflow filename, not `npm-publish.yml`.
+GitHub's OIDC identity is rooted at the workflow in the consuming repository.
+
+---
+
 ## Monorepo Workflows
 
 ### moon-ci.yml
@@ -648,7 +703,8 @@ actions/deploy-pages@v4          pnpm/action-setup@v4
 actions/upload-artifact@v7       rust-lang/crates-io-auth-action@v1
 actions/download-artifact@v8     softprops/action-gh-release@v2
 actions/cache@v4                 hyperb1iss/git-iris@v2
-astral-sh/setup-uv@v7           moonrepo/setup-toolchain@v0
+astral-sh/setup-uv@v7           oven-sh/setup-bun@v2
+moonrepo/setup-toolchain@v0     pnpm/action-setup@v4
 docker/setup-buildx-action@v4   docker/login-action@v4
 docker/build-push-action@v7     docker/setup-qemu-action@v4
 pypa/gh-action-pypi-publish@release/v1
