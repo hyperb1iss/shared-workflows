@@ -71,6 +71,6 @@ pypa/gh-action-pypi-publish@release/v1
 | `python-ci`            | python-version, ruff, pytest, rust-toolchain             | 6+ repos                                       |
 | `python-publish`       | package-names, checkout-ref, package-dir                 | sibyl, haven, droidmind, uchroma, signalrgb-ha |
 | `bun-ci`               | working-directory, check-script, build-script            | prezzer                                        |
-| `npm-publish`          | package-dirs, checkout-ref, tag, dry-run                  | prezzer                                        |
+| `npm-publish`          | package-dirs, checkout-ref, tag, dry-run                 | prezzer                                        |
 | `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps            | haven                                          |
 | `release-tags`         | _(internal, no inputs)_                                  | shared-workflows                               |
