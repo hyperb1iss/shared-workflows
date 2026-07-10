@@ -1,0 +1,56 @@
+# 🥟 Bun CI — shared-workflows
+# Install, verify, and build a Bun workspace.
+
+name: Bun CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Workspace root containing package.json and bun.lock'
+        type: string
+        default: '.'
+      check-script:
+        description: 'Package script that runs all verification gates'
+        type: string
+        default: 'check'
+      build-script:
+        description: 'Package script that builds publishable artifacts'
+        type: string
+        default: 'build'
+      run-build:
+        description: 'Run the build script after checks pass'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Check
+        env:
+          SCRIPT: ${{ inputs.check-script }}
+        run: bun run "$SCRIPT"
+
+      - name: Build
+        if: inputs.run-build
+        env:
+          SCRIPT: ${{ inputs.build-script }}
+        run: bun run "$SCRIPT"
