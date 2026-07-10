@@ -553,15 +553,15 @@ docker-api:
 ### bun-ci.yml
 
 Installs a Bun workspace from its committed lockfile, runs the repository's unified check script,
-then builds it. `oven-sh/setup-bun` resolves the version from `packageManager` or `engines.bun` in
-the caller's root `package.json`.
+then builds it.
 
-| Input               | Type    | Default   | Description                                 |
-| ------------------- | ------- | --------- | ------------------------------------------- |
-| `working-directory` | string  | `'.'`     | Workspace root                              |
-| `check-script`      | string  | `'check'` | Package script containing all quality gates |
-| `build-script`      | string  | `'build'` | Package script producing release artifacts  |
-| `run-build`         | boolean | `true`    | Run the build after checks pass             |
+| Input               | Type    | Default    | Description                                 |
+| ------------------- | ------- | ---------- | ------------------------------------------- |
+| `bun-version`       | string  | `'1.3.14'` | Exact Bun version to install                |
+| `working-directory` | string  | `'.'`      | Workspace root                              |
+| `check-script`      | string  | `'check'`  | Package script containing all quality gates |
+| `build-script`      | string  | `'build'`  | Package script producing release artifacts  |
+| `run-build`         | boolean | `true`     | Run the build after checks pass             |
 
 ```yaml
 ci:
@@ -576,6 +576,7 @@ Packages are published in the order listed by `package-dirs`.
 
 | Input          | Type    | Default    | Description                                  |
 | -------------- | ------- | ---------- | -------------------------------------------- |
+| `bun-version`  | string  | `'1.3.14'` | Exact Bun version to install                 |
 | `package-dirs` | string  | `'.'`      | Newline-separated package directories        |
 | `checkout-ref` | string  | `''`       | Git ref to checkout                          |
 | `check-script` | string  | `'check'`  | Root release-verification script             |
