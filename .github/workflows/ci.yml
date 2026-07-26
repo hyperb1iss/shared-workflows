@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,3 +23,12 @@ jobs:
 
       - name: Check formatting
         run: npx prettier --check "**/*.{yml,yaml,md}"
+
+      # Prettier only validates YAML shape. Actions schema errors — an
+      # unavailable context, a bad expression — parse as clean YAML and
+      # fail at startup instead, which is how a broken workflow shipped
+      # to every consumer unnoticed.
+      - name: Lint workflows
+        run: |
+          docker run --rm -v "$PWD:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color

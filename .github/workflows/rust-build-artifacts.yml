@@ -27,6 +27,9 @@ on:
         type: string
         default: '--release --locked'
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

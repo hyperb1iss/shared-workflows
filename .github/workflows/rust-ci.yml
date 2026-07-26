@@ -52,6 +52,9 @@ on:
         type: string
         default: 'stable'
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -65,7 +68,10 @@ jobs:
   changes:
     if: inputs.change-detection
     runs-on: ubuntu-latest
+    # Job-level permissions replace the default outright, so contents
+    # has to be restated here or checkout loses read access.
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       src: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}

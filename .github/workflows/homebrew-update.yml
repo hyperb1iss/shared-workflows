@@ -30,6 +30,10 @@ on:
       HOMEBREW_TAP_TOKEN:
         required: true
 
+# The checksum step uploads tarballs to the caller's own release.
+permissions:
+  contents: write
+
 concurrency:
   group: homebrew
   cancel-in-progress: false
