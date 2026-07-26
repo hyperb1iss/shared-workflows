@@ -70,9 +70,9 @@ jobs:
     outputs:
       src: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -100,7 +100,7 @@ jobs:
       (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
@@ -151,7 +151,7 @@ jobs:
       (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
@@ -208,5 +208,5 @@ jobs:
       (needs.changes.result == 'skipped' || needs.changes.outputs.src == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2

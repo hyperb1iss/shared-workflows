@@ -51,7 +51,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -64,18 +64,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y "${deps[@]}"
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v9.0.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ inputs.pnpm-version }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
@@ -91,7 +91,7 @@ jobs:
 
       - name: Restore moon cache
         id: moon-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .moon/cache
           key: moon-${{ runner.os }}-${{ hashFiles('.prototools', 'uv.lock', 'pnpm-lock.yaml') }}
@@ -143,7 +143,7 @@ jobs:
 
       - name: Save moon cache
         if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .moon/cache
           key: ${{ steps.moon-cache.outputs.cache-primary-key }}
