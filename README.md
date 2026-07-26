@@ -423,14 +423,14 @@ docs:
 Creates a GitHub Release with AI-generated notes from
 [git-iris](https://github.com/hyperb1iss/git-iris).
 
-| Input                    | Type    | Default             | Description                      |
-| ------------------------ | ------- | ------------------- | -------------------------------- |
-| `release-notes-model`    | string  | `'claude-opus-4-7'` | AI model for release notes       |
-| `release-notes-provider` | string  | `'anthropic'`       | LLM provider                     |
-| `attach-artifacts`       | boolean | `false`             | Attach build artifacts           |
-| `artifact-pattern`       | string  | `'*'`               | Glob for artifacts to attach     |
-| `release-notes-run-id`   | string  | `''`                | Use pre-generated notes from run |
-| `draft`                  | boolean | `false`             | Create as draft release          |
+| Input                    | Type    | Default           | Description                      |
+| ------------------------ | ------- | ----------------- | -------------------------------- |
+| `release-notes-model`    | string  | `'claude-opus-5'` | AI model for release notes       |
+| `release-notes-provider` | string  | `'anthropic'`     | LLM provider                     |
+| `attach-artifacts`       | boolean | `false`           | Attach build artifacts           |
+| `artifact-pattern`       | string  | `'*'`             | Glob for artifacts to attach     |
+| `release-notes-run-id`   | string  | `''`              | Use pre-generated notes from run |
+| `draft`                  | boolean | `false`           | Create as draft release          |
 
 **Examples:**
 
