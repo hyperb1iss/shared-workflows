@@ -38,9 +38,12 @@ jobs:
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -60,15 +63,17 @@ jobs:
         if: inputs.crates != ''
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CRATES: ${{ inputs.crates }}
+          PUBLISH_DELAY: ${{ inputs.publish-delay }}
         run: |
-          crates="${{ inputs.crates }}"
+          read -ra names <<< "$CRATES"
           first=true
-          for crate in $crates; do
+          for crate in "${names[@]}"; do
             if [ "$first" = true ]; then
               first=false
             else
-              echo "⏳ Waiting ${{ inputs.publish-delay }}s for crates.io index..."
-              sleep ${{ inputs.publish-delay }}
+              echo "⏳ Waiting ${PUBLISH_DELAY}s for crates.io index..."
+              sleep "$PUBLISH_DELAY"
             fi
             echo "📦 Publishing $crate..."
             cargo publish -p "$crate" --locked

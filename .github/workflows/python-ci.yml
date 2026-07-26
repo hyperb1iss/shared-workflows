@@ -46,9 +46,12 @@ jobs:
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - name: Install Rust
         if: inputs.rust-toolchain
@@ -74,4 +77,8 @@ jobs:
 
       - name: Run tests
         if: inputs.pytest
-        run: uv run pytest ${{ inputs.pytest-args }}
+        env:
+          PYTEST_ARGS: ${{ inputs.pytest-args }}
+        run: |
+          read -ra args <<< "$PYTEST_ARGS"
+          uv run pytest "${args[@]}"

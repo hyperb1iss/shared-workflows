@@ -48,6 +48,14 @@ on:
         description: 'Update CHANGELOG.md via git-iris'
         type: boolean
         default: false
+      release-notes-model:
+        description: 'AI model for git-iris release notes and changelog'
+        type: string
+        default: 'claude-opus-5'
+      release-notes-provider:
+        description: 'LLM provider for git-iris'
+        type: string
+        default: 'anthropic'
       cicd-workflow:
         description: 'Downstream workflow to trigger'
         type: string
@@ -102,9 +110,12 @@ jobs:
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -123,6 +134,9 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          BUMP: ${{ inputs.bump }}
         run: |
           # Prefer latest git tag, fall back to Cargo.toml
           CURRENT_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
@@ -134,15 +148,15 @@ jobs:
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "📌 Current version: $current (from tag: ${CURRENT_TAG:-none})"
 
-          if [ -n "${{ inputs.version }}" ]; then
-            new="${{ inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            new="$VERSION_INPUT"
           else
             IFS='.' read -r major minor patch <<< "$current"
-            case "${{ inputs.bump }}" in
+            case "$BUMP" in
               major) new="$((major + 1)).0.0" ;;
               minor) new="$major.$((minor + 1)).0" ;;
               patch) new="$major.$minor.$((patch + 1))" ;;
-              *) echo "❌ Invalid bump type: ${{ inputs.bump }}"; exit 1 ;;
+              *) echo "::error::Invalid bump type: $BUMP"; exit 1 ;;
             esac
           fi
 
@@ -162,32 +176,42 @@ jobs:
           echo "🏷️ Version: $current → $new"
 
       - name: Patch Cargo.toml version
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          sed -i "0,/^version = \".*\"/s//version = \"${{ steps.version.outputs.new }}\"/" Cargo.toml
+          sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" Cargo.toml
 
       - name: Patch workspace crate versions
         if: inputs.workspace-crates != ''
+        env:
+          WORKSPACE_CRATES: ${{ inputs.workspace-crates }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          for crate in ${{ inputs.workspace-crates }}; do
+          read -ra crates <<< "$WORKSPACE_CRATES"
+          for crate in "${crates[@]}"; do
             crate_toml="$crate/Cargo.toml"
             if [ -f "$crate_toml" ]; then
-              sed -i "0,/^version = \".*\"/s//version = \"${{ steps.version.outputs.new }}\"/" "$crate_toml"
+              sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" "$crate_toml"
               echo "📦 Patched $crate_toml"
             fi
           done
 
       - name: Patch workspace dependency version pins
         if: inputs.patch-workspace-dep-versions
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
           # Update version = "..." on lines that also contain path = "..." (workspace path deps)
-          sed -i '/path = "/s/version = "[^"]*"/version = "${{ steps.version.outputs.new }}"/' Cargo.toml
+          sed -i "/path = \"/s/version = \"[^\"]*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
           echo "📦 Updated workspace dependency version pins"
 
       - name: Patch extra version files
         if: inputs.version-files != ''
+        env:
+          VERSION_FILES: ${{ inputs.version-files }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          NEW_VERSION="${{ steps.version.outputs.new }}"
-          echo "${{ inputs.version-files }}" | while IFS= read -r entry; do
+          echo "$VERSION_FILES" | while IFS= read -r entry; do
             # Skip empty lines
             [ -z "$entry" ] && continue
 
@@ -257,36 +281,44 @@ jobs:
 
       - name: Commit version bump
         if: ${{ !inputs.dry_run }}
+        env:
+          WORKSPACE_CRATES: ${{ inputs.workspace-crates }}
+          VERSION_FILES: ${{ inputs.version-files }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
           git add Cargo.toml Cargo.lock
-          if [ -n "${{ inputs.workspace-crates }}" ]; then
-            for crate in ${{ inputs.workspace-crates }}; do
+          if [ -n "$WORKSPACE_CRATES" ]; then
+            read -ra crates <<< "$WORKSPACE_CRATES"
+            for crate in "${crates[@]}"; do
               [ -f "$crate/Cargo.toml" ] && git add "$crate/Cargo.toml"
             done
           fi
-          if [ -n "${{ inputs.version-files }}" ]; then
-            echo "${{ inputs.version-files }}" | while IFS= read -r entry; do
+          if [ -n "$VERSION_FILES" ]; then
+            echo "$VERSION_FILES" | while IFS= read -r entry; do
               entry="$(echo "$entry" | xargs)"
               [ -z "$entry" ] && continue
               file="${entry%%|*}"
               [ -n "$file" ] && [ -f "$file" ] && git add "$file"
             done || true
           fi
-          git commit -m "release: v${{ steps.version.outputs.new }}"
+          git commit -m "release: v${NEW_VERSION}"
 
       - name: Create and push tag
         if: ${{ !inputs.dry_run }}
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          git tag -a "v${{ steps.version.outputs.new }}" -m "Release v${{ steps.version.outputs.new }}"
-          git push origin HEAD:${{ github.ref_name }}
-          git push origin "v${{ steps.version.outputs.new }}"
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push origin "HEAD:${BRANCH}"
+          git push origin "v${NEW_VERSION}"
 
       - name: Generate release notes
         if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
         uses: hyperb1iss/git-iris@v2
         with:
-          provider: anthropic
-          model: claude-opus-5
+          provider: ${{ inputs.release-notes-provider }}
+          model: ${{ inputs.release-notes-model }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Upload release notes artifact
@@ -298,32 +330,49 @@ jobs:
 
       - name: Generate changelog
         if: ${{ !inputs.dry_run && inputs.generate-changelog }}
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          RELEASE_NOTES_MODEL: ${{ inputs.release-notes-model }}
+          RELEASE_NOTES_PROVIDER: ${{ inputs.release-notes-provider }}
         run: |
           cargo install git-iris || true
-          git-iris changelog --provider anthropic --model claude-opus-5
+          git-iris changelog --provider "$RELEASE_NOTES_PROVIDER" --model "$RELEASE_NOTES_MODEL"
           git add CHANGELOG.md
-          git commit -m "docs: update changelog for v${{ steps.version.outputs.new }}"
+          git commit -m "docs: update changelog for v${NEW_VERSION}"
           git push origin HEAD
 
       - name: Trigger downstream workflow
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CICD_WORKFLOW: ${{ inputs.cicd-workflow }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          PASS_RUN_ID: ${{ inputs.pass-run-id }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          args="--ref v${{ steps.version.outputs.new }}"
-          if [ "${{ inputs.pass-run-id }}" = "true" ]; then
-            args="$args -f release_run_id=${{ github.run_id }}"
+          args=(--ref "v${NEW_VERSION}")
+          if [ "$PASS_RUN_ID" = "true" ]; then
+            args+=(-f "release_run_id=${RUN_ID}")
           fi
-          gh workflow run "${{ inputs.cicd-workflow }}" $args
+          gh workflow run "$CICD_WORKFLOW" "${args[@]}"
 
       - name: Summary
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          CICD_WORKFLOW: ${{ inputs.cicd-workflow }}
+          CURRENT_VERSION: ${{ steps.version.outputs.current }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          echo "## Release ${{ inputs.dry_run && '[DRY RUN] ' || '' }}v${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "Build and tests passed. Run again without dry-run to publish." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Version bumped: ${{ steps.version.outputs.current }} → ${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "Tag pushed: v${{ steps.version.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "Downstream workflow triggered: ${{ inputs.cicd-workflow }}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "## Release [DRY RUN] v${NEW_VERSION}"
+              echo ""
+              echo "Build and tests passed. Run again without dry-run to publish."
+            else
+              echo "## Release v${NEW_VERSION}"
+              echo ""
+              echo "Version bumped: ${CURRENT_VERSION} → ${NEW_VERSION}"
+              echo "Tag pushed: v${NEW_VERSION}"
+              echo "Downstream workflow triggered: ${CICD_WORKFLOW}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

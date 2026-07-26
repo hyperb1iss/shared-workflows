@@ -57,9 +57,12 @@ jobs:
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - uses: actions/setup-python@v6
         with:
@@ -99,20 +102,26 @@ jobs:
 
       - name: Install Python dependencies
         if: inputs.uv-sync
-        run: uv sync ${{ inputs.uv-sync-args }}
+        env:
+          UV_SYNC_ARGS: ${{ inputs.uv-sync-args }}
+        run: |
+          read -ra args <<< "$UV_SYNC_ARGS"
+          uv sync "${args[@]}"
 
       - name: Inject environment variables
         if: inputs.env-vars != ''
+        env:
+          ENV_VARS: ${{ inputs.env-vars }}
         run: |
           while IFS= read -r line; do
             [ -z "$line" ] && continue
             echo "$line" >> "$GITHUB_ENV"
-          done <<'ENVEOF'
-          ${{ inputs.env-vars }}
-          ENVEOF
+          done <<< "$ENV_VARS"
 
       - name: Run moon commands
         if: inputs.moon-commands != ''
+        env:
+          MOON_COMMANDS: ${{ inputs.moon-commands }}
         run: |
           while IFS= read -r cmd; do
             [ -z "$cmd" ] && continue
@@ -122,13 +131,15 @@ jobs:
             fi
             echo "▸ $cmd"
             bash -c "$cmd"
-          done <<'CMDEOF'
-          ${{ inputs.moon-commands }}
-          CMDEOF
+          done <<< "$MOON_COMMANDS"
 
       - name: Run moon ci
         if: inputs.moon-commands == ''
-        run: moon ci ${{ inputs.moon-tasks }}
+        env:
+          MOON_TASKS: ${{ inputs.moon-tasks }}
+        run: |
+          read -ra tasks <<< "$MOON_TASKS"
+          moon ci "${tasks[@]}"
 
       - name: Save moon cache
         if: github.ref == 'refs/heads/main'

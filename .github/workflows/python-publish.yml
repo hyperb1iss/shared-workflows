@@ -45,8 +45,11 @@ jobs:
 
       - name: Build workspace packages
         if: inputs.package-names != ''
+        env:
+          PACKAGE_NAMES: ${{ inputs.package-names }}
         run: |
-          for pkg in ${{ inputs.package-names }}; do
+          read -ra names <<< "$PACKAGE_NAMES"
+          for pkg in "${names[@]}"; do
             echo "Building $pkg..."
             uv build --package "$pkg" --out-dir dist/
           done

@@ -83,10 +83,13 @@ jobs:
 
       - name: Extract version tag
         id: meta
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            version="${{ inputs.version }}"
-            version="${version#v}"
+          if [ -n "$VERSION_INPUT" ]; then
+            version="${VERSION_INPUT#v}"
           else
             version="${GITHUB_REF_NAME#v}"
           fi
@@ -94,13 +97,13 @@ jobs:
 
           # Build tag list based on registries
           tags=""
-          IFS=',' read -ra registries <<< "${{ inputs.registry }}"
+          IFS=',' read -ra registries <<< "$REGISTRY"
           for reg in "${registries[@]}"; do
             reg=$(echo "$reg" | xargs)  # trim whitespace
             if [ "$reg" = "docker.io" ]; then
-              tags="${tags}${{ inputs.image-name }}:${version},${{ inputs.image-name }}:latest,"
+              tags="${tags}${IMAGE_NAME}:${version},${IMAGE_NAME}:latest,"
             elif [ "$reg" = "ghcr.io" ]; then
-              tags="${tags}ghcr.io/${{ inputs.image-name }}:${version},ghcr.io/${{ inputs.image-name }}:latest,"
+              tags="${tags}ghcr.io/${IMAGE_NAME}:${version},ghcr.io/${IMAGE_NAME}:latest,"
             fi
           done
           tags="${tags%,}"  # remove trailing comma
