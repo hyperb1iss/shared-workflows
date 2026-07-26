@@ -35,40 +35,63 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Target Selection ──────────────────────────────────────────────
+  # The matrix context is not available in a job-level `if:`, so the
+  # requested targets are resolved here and the build matrix is
+  # constructed from the result.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Select build targets
+        id: select
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          cat > all-targets.json <<'JSON'
+          [
+            { "target": "linux-amd64", "os": "ubuntu-latest",    "rust-target": "x86_64-unknown-linux-gnu",  "suffix": "" },
+            { "target": "linux-arm64", "os": "ubuntu-24.04-arm", "rust-target": "aarch64-unknown-linux-gnu", "suffix": "" },
+            { "target": "macos-arm64", "os": "macos-latest",     "rust-target": "aarch64-apple-darwin",      "suffix": "" },
+            { "target": "windows-gnu", "os": "windows-latest",   "rust-target": "x86_64-pc-windows-gnu",     "suffix": ".exe" }
+          ]
+          JSON
+
+          selected=$(jq -c --arg t " $TARGETS " \
+            '[.[] | . as $e | select($t | contains(" " + $e.target + " "))]' all-targets.json)
+
+          if [ "$(jq 'length' <<< "$selected")" -eq 0 ]; then
+            echo "::error::No known build targets matched '$TARGETS'."
+            echo "::error::Valid targets: $(jq -r '[.[].target] | join(" ")' all-targets.json)"
+            exit 1
+          fi
+
+          jq -r '.[] | "🎯 \(.target) → \(.["rust-target"]) on \(.os)"' <<< "$selected"
+          echo "matrix={\"include\":$selected}" >> "$GITHUB_OUTPUT"
+
   # ── Build Matrix ──────────────────────────────────────────────────
   build:
+    needs: setup
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: linux-amd64
-            os: ubuntu-latest
-            rust-target: x86_64-unknown-linux-gnu
-            suffix: ''
-          - target: linux-arm64
-            os: ubuntu-24.04-arm
-            rust-target: aarch64-unknown-linux-gnu
-            suffix: ''
-          - target: macos-arm64
-            os: macos-latest
-            rust-target: aarch64-apple-darwin
-            suffix: ''
-          - target: windows-gnu
-            os: windows-latest
-            rust-target: x86_64-pc-windows-gnu
-            suffix: '.exe'
-
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    if: contains(format(' {0} ', inputs.targets), format(' {0} ', matrix.target))
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Install system dependencies (Linux)
         if: inputs.system-deps != '' && runner.os == 'Linux'
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -79,15 +102,24 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build ${{ inputs.cargo-build-args }} --target ${{ matrix.rust-target }}
+        env:
+          BUILD_ARGS: ${{ inputs.cargo-build-args }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: |
+          read -ra args <<< "$BUILD_ARGS"
+          cargo build "${args[@]}" --target "$RUST_TARGET"
 
       - name: Stage binaries
-        shell: bash
+        env:
+          BINARIES: ${{ inputs.binaries }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           mkdir -p staging
-          for binary in ${{ inputs.binaries }}; do
-            cp "target/${{ matrix.rust-target }}/release/${binary}${{ matrix.suffix }}" "staging/"
-            echo "📦 Staged ${binary}${{ matrix.suffix }}"
+          read -ra names <<< "$BINARIES"
+          for binary in "${names[@]}"; do
+            cp "target/${RUST_TARGET}/release/${binary}${SUFFIX}" staging/
+            echo "📦 Staged ${binary}${SUFFIX}"
           done
 
       - name: Upload artifacts
@@ -107,9 +139,12 @@ jobs:
 
       - name: Install system dependencies
         if: inputs.system-deps != ''
+        env:
+          SYSTEM_DEPS: ${{ inputs.system-deps }}
         run: |
+          read -ra deps <<< "$SYSTEM_DEPS"
           sudo apt-get update
-          sudo apt-get install -y ${{ inputs.system-deps }}
+          sudo apt-get install -y "${deps[@]}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -125,10 +160,12 @@ jobs:
         run: cargo generate-rpm
 
       - name: Generate man page
+        env:
+          BINARIES: ${{ inputs.binaries }}
         run: |
           mkdir -p staging
-          # Build with man page generation if supported
-          for binary in ${{ inputs.binaries }}; do
+          read -ra names <<< "$BINARIES"
+          for binary in "${names[@]}"; do
             if [ -f "target/release/man/${binary}.1" ]; then
               cp "target/release/man/${binary}.1" staging/
             fi
