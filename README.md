@@ -255,22 +255,24 @@ publish:
 Version bump → tag → trigger CI/CD. Each consumer keeps a thin `release.yml` with
 `workflow_dispatch` inputs that calls this shared workflow.
 
-| Input                          | Type    | Default      | Description                                         |
-| ------------------------------ | ------- | ------------ | --------------------------------------------------- |
-| `version`                      | string  | `''`         | Explicit version (overrides bump)                   |
-| `bump`                         | string  | `'patch'`    | `patch` / `minor` / `major`                         |
-| `dry_run`                      | boolean | `false`      | Build + test only                                   |
-| `system-deps`                  | string  | `''`         | apt packages                                        |
-| `workspace`                    | boolean | `false`      | Workspace mode                                      |
-| `workspace-crates`             | string  | `''`         | Crates for version patching                         |
-| `all-features`                 | boolean | `true`       | `--all-features` for build/test                     |
-| `nextest`                      | boolean | `true`       | Use nextest for validation                          |
-| `generate-release-notes`       | boolean | `false`      | Generate via git-iris                               |
-| `generate-changelog`           | boolean | `false`      | Update CHANGELOG.md                                 |
-| `cicd-workflow`                | string  | `'cicd.yml'` | Downstream workflow to trigger                      |
-| `pass-run-id`                  | boolean | `false`      | Pass release_run_id to downstream                   |
-| `patch-workspace-dep-versions` | boolean | `false`      | Patch version pins for path deps in root Cargo.toml |
-| `version-files`                | string  | `''`         | Extra files to patch (JSON, YAML frontmatter)       |
+| Input                          | Type    | Default           | Description                                         |
+| ------------------------------ | ------- | ----------------- | --------------------------------------------------- |
+| `version`                      | string  | `''`              | Explicit version (overrides bump)                   |
+| `bump`                         | string  | `'patch'`         | `patch` / `minor` / `major`                         |
+| `dry_run`                      | boolean | `false`           | Build + test only                                   |
+| `system-deps`                  | string  | `''`              | apt packages                                        |
+| `workspace`                    | boolean | `false`           | Workspace mode                                      |
+| `workspace-crates`             | string  | `''`              | Crates for version patching                         |
+| `all-features`                 | boolean | `true`            | `--all-features` for build/test                     |
+| `nextest`                      | boolean | `true`            | Use nextest for validation                          |
+| `generate-release-notes`       | boolean | `false`           | Generate via git-iris                               |
+| `generate-changelog`           | boolean | `false`           | Update CHANGELOG.md                                 |
+| `release-notes-model`          | string  | `'claude-opus-5'` | AI model for release notes and changelog            |
+| `release-notes-provider`       | string  | `'anthropic'`     | LLM provider for git-iris                           |
+| `cicd-workflow`                | string  | `'cicd.yml'`      | Downstream workflow to trigger                      |
+| `pass-run-id`                  | boolean | `false`           | Pass release_run_id to downstream                   |
+| `patch-workspace-dep-versions` | boolean | `false`           | Patch version pins for path deps in root Cargo.toml |
+| `version-files`                | string  | `''`              | Extra files to patch (JSON, YAML frontmatter)       |
 
 ### rust-build-artifacts.yml
 
@@ -688,27 +690,52 @@ just format
 
 # Check formatting
 just format-check
+
+# Validate workflows against the GitHub Actions schema
+just lint
+
+# Everything CI runs
+just check
 ```
+
+Both gates run in CI. Prettier catches formatting; `actionlint` catches what formatting cannot — an
+expression referencing a context that is not available there, a bad `needs` reference, a shellcheck
+error inside a `run:` block. Those parse as perfectly valid YAML and then fail the workflow at
+startup, so run `just check` before pushing.
 
 ### Action Versions (pinned)
 
 All workflows use consistent, pinned action versions:
 
 ```
-actions/checkout@v6              dtolnay/rust-toolchain@stable
-actions/setup-node@v6            Swatinem/rust-cache@v2
-actions/setup-python@v6          dorny/paths-filter@v3
-actions/configure-pages@v5       taiki-e/install-action@v2
-actions/upload-pages-artifact@v4 EmbarkStudios/cargo-deny-action@v2
-actions/deploy-pages@v4          pnpm/action-setup@v4
-actions/upload-artifact@v7       rust-lang/crates-io-auth-action@v1
-actions/download-artifact@v8     softprops/action-gh-release@v2
-actions/cache@v4                 hyperb1iss/git-iris@v2
-astral-sh/setup-uv@v7           oven-sh/setup-bun@v2
-moonrepo/setup-toolchain@v0     pnpm/action-setup@v4
-docker/setup-buildx-action@v4   docker/login-action@v4
-docker/build-push-action@v7     docker/setup-qemu-action@v4
+actions/cache/restore@v6
+actions/cache/save@v6
+actions/checkout@v7
+actions/configure-pages@v6
+actions/deploy-pages@v5
+actions/download-artifact@v8
+actions/setup-node@v7
+actions/setup-python@v7
+actions/upload-artifact@v7
+actions/upload-pages-artifact@v5
+astral-sh/setup-uv@v9.0.0
+docker/build-push-action@v7
+docker/login-action@v4
+docker/setup-buildx-action@v4
+docker/setup-qemu-action@v4
+dorny/paths-filter@v4
+dtolnay/rust-toolchain@nightly
+dtolnay/rust-toolchain@stable
+EmbarkStudios/cargo-deny-action@v2
+hyperb1iss/git-iris@v2
+moonrepo/setup-toolchain@v0
+oven-sh/setup-bun@v2
+pnpm/action-setup@v6
 pypa/gh-action-pypi-publish@release/v1
+rust-lang/crates-io-auth-action@v1
+softprops/action-gh-release@v3
+Swatinem/rust-cache@v2
+taiki-e/install-action@v2
 ```
 
 ---

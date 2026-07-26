@@ -36,24 +36,46 @@ docs/                        # Documentation
 - Parameterize differences, don't fork workflows
 - Smart defaults: nextest, cargo-deny, change detection, all-features ON by default
 - Cache only saved on main branch pushes (save-if pattern)
+- Caller inputs reach `run:` blocks through `env:`, never direct `${{ }}` interpolation
+- Every workflow declares explicit `permissions:`; job-level blocks replace the top-level one rather
+  than merging, so they restate everything they need
+- CI gates on prettier **and** actionlint (`just check`) — prettier validates YAML shape, actionlint
+  validates the Actions schema, and only the second catches a workflow that parses cleanly but dies
+  at startup
+- `astral-sh/setup-uv` is pinned to an exact version, not a major tag: upstream announced at v8 that
+  it may stop publishing major tags
 
 ## Action Versions (pinned)
 
 ```
-actions/checkout@v6          dtolnay/rust-toolchain@stable
-actions/setup-node@v6        Swatinem/rust-cache@v2
-actions/setup-python@v6      dorny/paths-filter@v3
-actions/configure-pages@v5   taiki-e/install-action@v2
-actions/upload-pages-artifact@v4  EmbarkStudios/cargo-deny-action@v2
-actions/deploy-pages@v4      pnpm/action-setup@v4
-actions/upload-artifact@v7   rust-lang/crates-io-auth-action@v1
-actions/download-artifact@v8 softprops/action-gh-release@v2
-astral-sh/setup-uv@v7       hyperb1iss/git-iris@v2
-oven-sh/setup-bun@v2        moonrepo/setup-toolchain@v0
-docker/setup-buildx-action@v4    docker/login-action@v4
+actions/cache/restore@v6
+actions/cache/save@v6
+actions/checkout@v7
+actions/configure-pages@v6
+actions/deploy-pages@v5
+actions/download-artifact@v8
+actions/setup-node@v7
+actions/setup-python@v7
+actions/upload-artifact@v7
+actions/upload-pages-artifact@v5
+astral-sh/setup-uv@v9.0.0
 docker/build-push-action@v7
-docker/setup-qemu-action@v4     actions/cache@v4
+docker/login-action@v4
+docker/setup-buildx-action@v4
+docker/setup-qemu-action@v4
+dorny/paths-filter@v4
+dtolnay/rust-toolchain@nightly
+dtolnay/rust-toolchain@stable
+EmbarkStudios/cargo-deny-action@v2
+hyperb1iss/git-iris@v2
+moonrepo/setup-toolchain@v0
+oven-sh/setup-bun@v2
+pnpm/action-setup@v6
 pypa/gh-action-pypi-publish@release/v1
+rust-lang/crates-io-auth-action@v1
+softprops/action-gh-release@v3
+Swatinem/rust-cache@v2
+taiki-e/install-action@v2
 ```
 
 ## Workflow Quick Reference
