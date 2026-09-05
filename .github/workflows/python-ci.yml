@@ -35,11 +35,7 @@ permissions:
   contents: read
 
 env:
-  UV_SYSTEM_PYTHON: 1
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  UV_PYTHON: ${{ inputs.python-version }}
 
 jobs:
   ci:
@@ -61,22 +57,24 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Ruff check
         if: inputs.ruff
-        run: uv run ruff check .
+        run: uv run --locked ruff check .
 
       - name: Ruff format check
         if: inputs.ruff
-        run: uv run ruff format --check .
+        run: uv run --locked ruff format --check .
 
       - name: Run tests
         if: inputs.pytest
@@ -84,4 +82,4 @@ jobs:
           PYTEST_ARGS: ${{ inputs.pytest-args }}
         run: |
           read -ra args <<< "$PYTEST_ARGS"
-          uv run pytest "${args[@]}"
+          uv run --locked pytest "${args[@]}"

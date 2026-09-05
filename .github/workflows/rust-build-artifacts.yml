@@ -25,17 +25,17 @@ on:
       cargo-build-args:
         description: 'Extra cargo build arguments'
         type: string
-        default: '--release --locked'
+        default: '--locked'
+      cargo-profile:
+        description: 'Cargo profile used for both build and artifact extraction'
+        type: string
+        default: 'release'
 
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
-
-concurrency:
-  group: release
-  cancel-in-progress: false
 
 jobs:
   # ── Target Selection ──────────────────────────────────────────────
@@ -61,14 +61,19 @@ jobs:
           ]
           JSON
 
-          selected=$(jq -c --arg t " $TARGETS " \
-            '[.[] | . as $e | select($t | contains(" " + $e.target + " "))]' all-targets.json)
-
-          if [ "$(jq 'length' <<< "$selected")" -eq 0 ]; then
-            echo "::error::No known build targets matched '$TARGETS'."
-            echo "::error::Valid targets: $(jq -r '[.[].target] | join(" ")' all-targets.json)"
+          read -ra requested <<< "$TARGETS"
+          if [ "${#requested[@]}" -eq 0 ]; then
+            echo "::error::At least one build target is required."
             exit 1
           fi
+          for target in "${requested[@]}"; do
+            if ! jq -e --arg target "$target" 'any(.[]; .target == $target)' all-targets.json > /dev/null; then
+              echo "::error::Unknown build target: $target"
+              exit 1
+            fi
+          done
+          selected=$(jq -c --argjson requested "$(printf '%s\n' "${requested[@]}" | jq -R . | jq -s .)" \
+            '[.[] | select(.target as $target | $requested | index($target))]' all-targets.json)
 
           jq -r '.[] | "🎯 \(.target) → \(.["rust-target"]) on \(.os)"' <<< "$selected"
           echo "matrix={\"include\":$selected}" >> "$GITHUB_OUTPUT"
@@ -103,33 +108,53 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build
         env:
+          CARGO_PROFILE: ${{ inputs.cargo-profile }}
           BUILD_ARGS: ${{ inputs.cargo-build-args }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
           read -ra args <<< "$BUILD_ARGS"
-          cargo build "${args[@]}" --target "$RUST_TARGET"
+          for arg in "${args[@]}"; do
+            case "$arg" in
+              --release|--profile|--profile=*|--target|--target=*|--target-dir|--target-dir=*)
+                echo "::error::Use cargo-profile and targets inputs instead of build argument $arg"
+                exit 1 ;;
+            esac
+          done
+          cargo build "${args[@]}" --profile "$CARGO_PROFILE" --target "$RUST_TARGET"
 
       - name: Stage binaries
         env:
           BINARIES: ${{ inputs.binaries }}
           RUST_TARGET: ${{ matrix.rust-target }}
+          CARGO_PROFILE: ${{ inputs.cargo-profile }}
           SUFFIX: ${{ matrix.suffix }}
         run: |
           mkdir -p staging
+          profile_dir="$CARGO_PROFILE"
+          case "$profile_dir" in
+            dev|test) profile_dir=debug ;;
+            release|bench) profile_dir=release ;;
+          esac
           read -ra names <<< "$BINARIES"
           for binary in "${names[@]}"; do
-            cp "target/${RUST_TARGET}/release/${binary}${SUFFIX}" staging/
+            cp "target/${RUST_TARGET}/${profile_dir}/${binary}${SUFFIX}" staging/
             echo "📦 Staged ${binary}${SUFFIX}"
           done
+
+      - name: Archive binaries
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: tar -czf "binaries-${BUILD_TARGET}.tar.gz" -C staging .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.target }}
-          path: staging/
+          path: binaries-${{ matrix.target }}.tar.gz
           if-no-files-found: error
 
   # ── Linux Packages (.deb + .rpm) ─────────────────────────────────
@@ -152,6 +177,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
@@ -177,8 +204,8 @@ jobs:
       - name: Stage packages
         run: |
           mkdir -p staging
-          cp target/debian/*.deb staging/ 2>/dev/null || true
-          cp target/generate-rpm/*.rpm staging/ 2>/dev/null || true
+          cp target/debian/*.deb staging/
+          cp target/generate-rpm/*.rpm staging/
           ls -la staging/
 
       - name: Upload packages
@@ -186,4 +213,4 @@ jobs:
         with:
           name: packages
           path: staging/
-          if-no-files-found: warn
+          if-no-files-found: error

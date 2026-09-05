@@ -39,16 +39,15 @@ on:
         type: string
         default: '3.13'
       pnpm-version:
-        description: 'pnpm version'
+        description: 'pnpm version (empty = project pin, falling back to 10)'
         type: string
-        default: '10'
+        default: ''
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  UV_PYTHON: ${{ inputs.python-version }}
 
 jobs:
   ci:
@@ -72,16 +71,46 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
-
-      - uses: pnpm/action-setup@v6
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: ${{ inputs.pnpm-version }}
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
-          cache: pnpm
+          package-manager-cache: false
+
+      - name: Resolve pnpm version
+        id: pnpm-version
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm-version }}
+          PACKAGE_JSON: package.json
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync(process.env.PACKAGE_JSON, 'utf8'));
+          const pinned = manifest.packageManager?.startsWith('pnpm@') ||
+            manifest.devEngines?.packageManager?.name === 'pnpm';
+          const version = process.env.PNPM_VERSION || (pinned ? '' : '10');
+          if (/[\r\n]/.test(version)) throw new Error('Invalid pnpm version');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + version + '\n');
+          JS
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ steps.pnpm-version.outputs.version }}
+          package_json_file: package.json
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm cache
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Setup moon
         uses: moonrepo/setup-toolchain@v0
@@ -90,18 +119,27 @@ jobs:
 
       # Proto would otherwise shadow the native setup-* installs above.
       - name: Remove proto shims
-        run: rm -f "$HOME/.proto/shims"/{node,pnpm,uv,python}* 2>/dev/null || true
+        run: rm -f "$HOME/.proto/shims"/{node,pnpm,uv,python}*
 
       - name: Restore moon cache
         id: moon-cache
         uses: actions/cache/restore@v6
         with:
           path: .moon/cache
-          key: moon-${{ runner.os }}-${{ hashFiles('.prototools', 'uv.lock', 'pnpm-lock.yaml') }}
-          restore-keys: moon-${{ runner.os }}-
+          key: moon-${{ runner.os }}-${{ hashFiles('.prototools', 'uv.lock', 'pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            moon-${{ runner.os }}-${{ hashFiles('.prototools', 'uv.lock', 'pnpm-lock.yaml') }}-
+            moon-${{ runner.os }}-
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Save pnpm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: Install Python dependencies
         if: inputs.uv-sync
@@ -109,7 +147,7 @@ jobs:
           UV_SYNC_ARGS: ${{ inputs.uv-sync-args }}
         run: |
           read -ra args <<< "$UV_SYNC_ARGS"
-          uv sync "${args[@]}"
+          uv sync --locked "${args[@]}"
 
       - name: Inject environment variables
         if: inputs.env-vars != ''
@@ -128,12 +166,12 @@ jobs:
         run: |
           while IFS= read -r cmd; do
             [ -z "$cmd" ] && continue
-            if [[ "$cmd" != moon* ]]; then
+            if [[ ! "$cmd" =~ ^moon[[:space:]] ]]; then
               echo "::error::Command must start with 'moon': $cmd"
               exit 1
             fi
             echo "▸ $cmd"
-            bash -c "$cmd"
+            bash -e -o pipefail -c "$cmd"
           done <<< "$MOON_COMMANDS"
 
       - name: Run moon ci
@@ -145,7 +183,7 @@ jobs:
           moon ci "${tasks[@]}"
 
       - name: Save moon cache
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v6
         with:
           path: .moon/cache

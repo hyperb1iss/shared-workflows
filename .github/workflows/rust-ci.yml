@@ -58,10 +58,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  CARGO_WORKSPACE: ${{ inputs.workspace }}
+  CARGO_ALL_FEATURES: ${{ inputs.all-features }}
+  RUSTUP_TOOLCHAIN: ${{ inputs.rust-toolchain }}
 
 jobs:
   # ── Change Detection ──────────────────────────────────────────────
@@ -74,7 +73,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      src: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}
+      src: ${{ steps.filter.outputs.changes != '[]' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -83,6 +82,9 @@ jobs:
         with:
           filters: |
             rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - '.cargo/**'
               - 'src/**'
               - 'tests/**'
               - 'examples/**'
@@ -121,7 +123,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ inputs.rust-toolchain }}
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Setup Rust (nightly fmt)
         if: inputs.nightly-fmt
@@ -131,23 +133,25 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Check formatting
-        run: cargo ${{ inputs.nightly-fmt && '+nightly ' || '' }}fmt --all --check
+        env:
+          FORMAT_TOOLCHAIN: ${{ inputs.nightly-fmt && 'nightly' || inputs.rust-toolchain }}
+        run: cargo "+$FORMAT_TOOLCHAIN" fmt --all --check
 
       - name: Clippy
         env:
+          RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+          CARGO_ALL_TARGETS: ${{ inputs.all-targets }}
           EXTRA_CLIPPY_ARGS: ${{ inputs.extra-clippy-args }}
         run: |
           read -ra extra <<< "$EXTRA_CLIPPY_ARGS"
-          cargo clippy \
-            --locked \
-            ${{ inputs.workspace && '--workspace' || '' }} \
-            ${{ inputs.all-targets && '--all-targets' || '' }} \
-            ${{ inputs.all-features && '--all-features' || '' }} \
-            "${extra[@]}" \
-            -- -D warnings
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_TARGETS" = true ]; then args+=(--all-targets); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo "+$RUST_TOOLCHAIN" clippy "${args[@]}" "${extra[@]}" -- -D warnings
 
   # ── Test ──────────────────────────────────────────────────────────
   test:
@@ -174,7 +178,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install nextest
         if: inputs.nextest
@@ -184,26 +188,27 @@ jobs:
 
       - name: Run tests (nextest)
         if: inputs.nextest
-        run: >-
-          cargo nextest run
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo nextest run "${args[@]}"
 
       - name: Run tests (cargo test)
         if: ${{ !inputs.nextest }}
-        run: >-
-          cargo test
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo test "${args[@]}"
 
       - name: Run doc tests
-        run: >-
-          cargo test --doc
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        if: inputs.nextest
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo test --doc "${args[@]}"
 
   # ── Cargo Deny ────────────────────────────────────────────────────
   deny:

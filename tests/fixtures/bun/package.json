@@ -1,0 +1,12 @@
+{
+  "name": "shared-workflows-bun-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "picocolors": "1.1.1"
+  },
+  "scripts": {
+    "check": "bun test",
+    "build": "bun build index.ts --outdir dist"
+  }
+}

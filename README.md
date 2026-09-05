@@ -1,179 +1,214 @@
-<h1 align="center">
-  <br>
-  ⚙️ shared-workflows
-  <br>
-</h1>
+<h1 align="center">⚡ shared-workflows</h1>
 
 <p align="center">
-  <strong>Reusable GitHub Actions for the hyperb1iss ecosystem</strong><br>
-  <sub>✦ 14 workflows · 15+ consumers · one source of truth ✦</sub>
+  <strong>Reusable CI and releases for the hyperb1iss ecosystem</strong><br>
+  <sub>13 reusable workflows · Rust, Python, Bun, docs, and containers</sub>
 </p>
 
 <p align="center">
-  <a href="https://github.com/hyperb1iss/shared-workflows/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/hyperb1iss/shared-workflows/ci.yml?branch=main&style=for-the-badge&logo=github&logoColor=white&label=CI&color=e135ff" alt="CI">
-  </a>
-  <a href="https://github.com/hyperb1iss/shared-workflows">
-    <img src="https://img.shields.io/badge/GitHub_Actions-Reusable-80ffea?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions">
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/License-Apache_2.0-50fa7b?style=for-the-badge" alt="License">
-  </a>
+  <a href="https://github.com/hyperb1iss/shared-workflows/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/hyperb1iss/shared-workflows/ci.yml?branch=main&style=for-the-badge&logo=github&logoColor=white&label=CI&color=e135ff" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-80ffea?style=for-the-badge" alt="Apache 2.0 license"></a>
 </p>
 
-<p align="center">
-  <a href="#overview">Overview</a> •
-  <a href="#how-to-use-these-workflows">How To Use</a> •
-  <a href="#rust-workflows">Rust</a> •
-  <a href="#python-workflows">Python</a> •
-  <a href="#common-workflows">Common</a> •
-  <a href="#monorepo-workflows">Monorepo</a> •
-  <a href="#versioning">Versioning</a>
-</p>
+Centralize the setup, keep the project decisions local. Call a shared workflow from your repository,
+pass its inputs, and keep service containers, release triggers, and workflow orchestration in your
+caller.
 
----
+**Moving from v1?** Read the [v2 migration guide](docs/migration-v2.md). Python publishing changes
+shape, and callers now own workflow-level concurrency. The v1 tag stays frozen while v2 receives
+validated updates.
 
-## Overview
+## Start here
 
-Every repo in the hyperb1iss ecosystem was carrying 50–150 lines of duplicated CI/CD YAML. Same
-patterns, same action versions, slightly different flags. **shared-workflows** collapses all of that
-into reusable `workflow_call` workflows that each consumer invokes in ~10 lines.
-
-> _One repo to rule them all. Bump an action version once, every project gets it._
-
-## How To Use These Workflows
-
-### The Pattern
-
-Every workflow in this repo is a **reusable workflow** triggered via `workflow_call`. A consuming
-repo calls it with `uses:` in its own workflow file:
+Create this file in your repository. The caller grants the permissions required by the shared jobs.
 
 ```yaml
-# In the consuming repo: .github/workflows/ci.yml
+# .github/workflows/ci.yml
 name: CI
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v2
     with:
-      workspace: true # override defaults as needed
-    secrets: inherit # passes all org/repo secrets
+      workspace: true
 ```
 
-### Rules
+Callers must live directly in `.github/workflows/`. Use `@v2` for compatible updates or a full
+commit SHA for an immutable revision. Pass named secrets when needed; `secrets: inherit` is
+available for eligible repositories but is unnecessary for jobs that do not consume secrets.
 
-1. **Caller YAML must live in `.github/workflows/`** — no subdirectories
-2. **Always use `secrets: inherit`** — passes all org/repo secrets automatically
-3. **Pin to `@v1`** — gets automatic minor/patch updates, no breaking changes
-4. **Override only what you need** — smart defaults are ON for everything
-5. **Keep project-specific jobs inline** — only use shared workflows for common patterns
+## Workflow catalog
 
-### Workflow Catalog
+| Workflow                                                     | Purpose                               | Caller permissions                                  |
+| ------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------- |
+| [Rust CI](.github/workflows/rust-ci.yml)                     | Fmt, clippy, nextest, cargo-deny      | `contents: read`, `pull-requests: read`             |
+| [Rust publish](.github/workflows/rust-publish.yml)           | Publish crates in dependency order    | `contents: read`, `id-token: write`                 |
+| [Rust release](.github/workflows/rust-release.yml)           | Bump version, validate, tag, dispatch | `contents: write`, `actions: write`                 |
+| [Rust artifacts](.github/workflows/rust-build-artifacts.yml) | Build binaries and Linux packages     | `contents: read`                                    |
+| [Python CI](.github/workflows/python-ci.yml)                 | Ruff and pytest                       | `contents: read`                                    |
+| [Python build](.github/workflows/python-build.yml)           | Build distribution artifacts          | `contents: read`                                    |
+| [Bun CI](.github/workflows/bun-ci.yml)                       | Check and build a workspace           | `contents: read`                                    |
+| [npm publish](.github/workflows/npm-publish.yml)             | Build and publish with OIDC           | `contents: read`, `id-token: write`                 |
+| [Docs deploy](.github/workflows/docs-deploy.yml)             | VitePress or MkDocs to Pages          | `contents: read`, `pages: write`, `id-token: write` |
+| [GitHub release](.github/workflows/github-release.yml)       | Release notes and attached assets     | `contents: write`, `actions: read`                  |
+| [Homebrew update](.github/workflows/homebrew-update.yml)     | Package assets and update a tap       | `contents: write`                                   |
+| [Docker publish](.github/workflows/docker-publish.yml)       | DockerHub, GHCR, or both              | `contents: read`, `packages: write`                 |
+| [moon CI](.github/workflows/moon-ci.yml)                     | Polyglot workspace tasks              | `contents: read`                                    |
 
-| Workflow                  | Phase    | Description                             |
-| ------------------------- | -------- | --------------------------------------- |
-| 🦀 `rust-ci`              | Rust     | Fmt, clippy, nextest, cargo-deny        |
-| 📦 `rust-publish`         | Rust     | Publish to crates.io (OIDC)             |
-| 🏷️ `rust-release`         | Rust     | Version bump → tag → trigger downstream |
-| 🔨 `rust-build-artifacts` | Rust     | Cross-platform binaries (4 targets)     |
-| 📖 `docs-deploy`          | Common   | VitePress / MkDocs → GitHub Pages       |
-| 🎯 `github-release`       | Common   | GitHub Release with git-iris AI notes   |
-| 🍺 `homebrew-update`      | Common   | Update homebrew-tap formula             |
-| 🐳 `docker-publish`       | Common   | Build + push Docker images              |
-| 🐍 `python-ci`            | Python   | Ruff lint, pytest, multi-version matrix |
-| 📦 `python-publish`       | Python   | Publish to PyPI (OIDC)                  |
-| 🥟 `bun-ci`               | Bun      | Check and build Bun workspaces          |
-| 📦 `npm-publish`          | Bun      | Publish npm packages (OIDC)             |
-| 🌙 `moon-ci`              | Monorepo | moonrepo workspace CI                   |
-| 🏷️ `release-tags`         | Internal | Auto-move major version tag on push     |
+The repository also has CI and an internal version-tag promotion workflow. The promotion workflow is
+called by repository CI after validation; consumers should use the public catalog above. GitHub
+allows a called workflow to reduce permissions, but
+[it cannot raise the caller's grant](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations).
 
-### Typical CI/CD Pipeline (Rust)
+## Python publishing
 
-A full Rust project pipeline composes these workflows:
+Build distributions in the shared workflow and publish from a normal job in your repository.
+Register your repository and `publish.yml` with PyPI. If you configure a publishing environment in
+PyPI, add the same environment to the `publish` job.
 
 ```yaml
-# .github/workflows/ci.yml — runs on every push/PR
+# .github/workflows/publish.yml
+name: Publish Python
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
 jobs:
-  ci:
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-    secrets: inherit
+  build:
+    uses: hyperb1iss/shared-workflows/.github/workflows/python-build.yml@v2
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
 ```
 
+PyPI's
+[trusted publishing limitation](https://docs.pypi.org/trusted-publishers/troubleshooting/#reusable-workflows-on-github)
+requires the publish step to run in the caller. Build code runs separately from the job authorized
+to publish. For a workspace, pass `package-names: 'my-core my-cli'` to the build job.
+
+## Rust release pipeline
+
+Publish and build independently, then create the GitHub release. Configure crates.io trusted
+publishing for your package before the first run. Store `ANTHROPIC_API_KEY` in the caller repository
+for generated release notes.
+
 ```yaml
-# .github/workflows/cicd.yml — runs on tag push
+# .github/workflows/cicd.yml
+name: Release artifacts
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   publish:
-    if: startsWith(github.ref, 'refs/tags/')
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
-    secrets: inherit
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v2
+    permissions:
+      contents: read
+      id-token: write
 
   build:
-    if: startsWith(github.ref, 'refs/tags/')
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-build-artifacts.yml@v1
+    uses: hyperb1iss/shared-workflows/.github/workflows/rust-build-artifacts.yml@v2
     with:
-      binaries: 'my-binary'
-    secrets: inherit
+      binaries: my-cli
 
   release:
     needs: [publish, build]
-    uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
-    with:
-      attach-artifacts: true
-    secrets: inherit
-```
-
-```yaml
-# .github/workflows/release.yml — manual trigger
-on:
-  workflow_dispatch:
-    inputs:
-      version: { type: string, default: '' }
-      bump: { type: choice, default: 'patch', options: [patch, minor, major] }
-      dry_run: { type: boolean, default: false }
-
-jobs:
-  release:
-    uses: hyperb1iss/shared-workflows/.github/workflows/rust-release.yml@v1
-    with:
-      version: ${{ inputs.version }}
-      bump: ${{ inputs.bump }}
-      dry_run: ${{ inputs.dry_run }}
-    secrets: inherit
+    uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v2
     permissions:
       contents: write
-      actions: write
+      actions: read
+    with:
+      attach-artifacts: true
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-### Typical CI/CD Pipeline (Python)
+Dispatch this workflow against a version tag. To automate version changes, add a separate caller for
+`rust-release.yml` with `contents: write` and `actions: write`, and set `cicd-workflow` to
+`cicd.yml`. Branch protection may require its optional `release-token` secret. Keep this downstream
+workflow dispatch-only: a personal token can also trigger tag-push workflows, causing duplicate
+publication if both triggers are enabled. For manual-tag pipelines without the release orchestrator,
+use a tag-push trigger instead.
+
+## Pages deployment
+
+Configure the repository's Pages source as GitHub Actions. This example expects a pnpm lockfile and
+a build script in `docs/`.
 
 ```yaml
-# .github/workflows/ci.yml
+# .github/workflows/docs.yml
+name: Docs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  ci:
-    uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
-    secrets: inherit
+  docs:
+    uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v2
+    with:
+      engine: vitepress
+      docs-dir: docs
 ```
 
-```yaml
-# .github/workflows/publish.yml — runs on tag push
-jobs:
-  publish:
-    if: startsWith(github.ref, 'refs/tags/')
-    uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
-    secrets: inherit
-```
+For MkDocs, set `engine: mkdocs` and point `docs-dir` at the uv project containing your MkDocs
+configuration. Keep its lockfile committed.
 
----
+## Concurrency
 
-## Rust Workflows
+Reusable workflows do not declare workflow-level concurrency groups. Independent publish, build, and
+release jobs can run together without colliding on a repository-wide group name.
+
+Use caller-level cancellation for CI and a caller-level Pages group when deployments share a site.
+Release tags normally run independently. If a release process updates a shared branch or resource,
+choose a group in its caller that names that resource. The default GitHub concurrency queue retains
+only one pending run; choose `queue: max` when pending operations must be preserved.
+
+The publishing workflows use narrow job-level groups with `queue: max` to protect mutable latest
+updates. Builds and release-note generation remain parallel; only the final latest update shares a
+lock with competing releases.
+
+## Rust workflows
 
 ### rust-ci.yml
 
-The highest-value workflow. Replaces 60–100 lines per Rust project.
+Checks formatting, clippy, tests, and dependency policy. Changes outside configured paths can skip
+Rust jobs.
 
 | Input               | Type    | Default    | Description                      |
 | ------------------- | ------- | ---------- | -------------------------------- |
@@ -189,39 +224,7 @@ The highest-value workflow. Replaces 60–100 lines per Rust project.
 | `extra-clippy-args` | string  | `''`       | Additional clippy arguments      |
 | `rust-toolchain`    | string  | `'stable'` | Rust toolchain version           |
 
-**Jobs:** `changes` → `check` (fmt + clippy) → `test` (nextest + doc tests) → `deny`
-
-**Examples:**
-
-```yaml
-# Simplest — all defaults work
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-  secrets: inherit
-
-# Workspace with system deps and nightly fmt
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-  with:
-    system-deps: 'libdbus-1-dev pkg-config lld'
-    workspace: true
-    nightly-fmt: true
-    nextest: false
-    cargo-deny: false
-    change-detection: false
-  secrets: inherit
-
-# Workspace with extra change filters for web assets
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-  with:
-    workspace: true
-    change-filters: |
-      web:
-        - 'web/**'
-        - 'fonts/**'
-  secrets: inherit
-```
+**Jobs:** `changes` gates independent `check`, `test`, and `deny` jobs.
 
 ### rust-publish.yml
 
@@ -233,58 +236,52 @@ Publishes to crates.io via OIDC trusted publishing. No tokens to manage.
 | `publish-delay` | number | `30`    | Seconds between workspace publishes |
 | `system-deps`   | string | `''`    | apt packages needed for build       |
 
-**Examples:**
-
-```yaml
-# Single crate
-publish:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
-  secrets: inherit
-
-# Workspace with ordered publishes
-publish:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-publish.yml@v1
-  with:
-    crates: 'my-api my-core'
-    publish-delay: 30
-  secrets: inherit
-```
-
 ### rust-release.yml
 
 Version bump → tag → trigger CI/CD. Each consumer keeps a thin `release.yml` with
 `workflow_dispatch` inputs that calls this shared workflow.
 
-| Input                          | Type    | Default           | Description                                         |
-| ------------------------------ | ------- | ----------------- | --------------------------------------------------- |
-| `version`                      | string  | `''`              | Explicit version (overrides bump)                   |
-| `bump`                         | string  | `'patch'`         | `patch` / `minor` / `major`                         |
-| `dry_run`                      | boolean | `false`           | Build + test only                                   |
-| `system-deps`                  | string  | `''`              | apt packages                                        |
-| `workspace`                    | boolean | `false`           | Workspace mode                                      |
-| `workspace-crates`             | string  | `''`              | Crates for version patching                         |
-| `all-features`                 | boolean | `true`            | `--all-features` for build/test                     |
-| `nextest`                      | boolean | `true`            | Use nextest for validation                          |
-| `generate-release-notes`       | boolean | `false`           | Generate via git-iris                               |
-| `generate-changelog`           | boolean | `false`           | Update CHANGELOG.md                                 |
-| `release-notes-model`          | string  | `'claude-opus-5'` | AI model for release notes and changelog            |
-| `release-notes-provider`       | string  | `'anthropic'`     | LLM provider for git-iris                           |
-| `cicd-workflow`                | string  | `'cicd.yml'`      | Downstream workflow to trigger                      |
-| `pass-run-id`                  | boolean | `false`           | Pass release_run_id to downstream                   |
-| `patch-workspace-dep-versions` | boolean | `false`           | Patch version pins for path deps in root Cargo.toml |
-| `version-files`                | string  | `''`              | Extra files to patch (JSON, YAML frontmatter)       |
+| Input                          | Type    | Default           | Description                                                |
+| ------------------------------ | ------- | ----------------- | ---------------------------------------------------------- |
+| `version`                      | string  | `''`              | Explicit version (overrides bump)                          |
+| `bump`                         | string  | `'patch'`         | `patch` / `minor` / `major`                                |
+| `resume-release`               | boolean | `false`           | Retry downstream dispatch for an existing explicit version |
+| `dry_run`                      | boolean | `false`           | Build + test only                                          |
+| `system-deps`                  | string  | `''`              | apt packages                                               |
+| `workspace`                    | boolean | `false`           | Workspace mode                                             |
+| `workspace-crates`             | string  | `''`              | Cargo package names or workspace-relative paths            |
+| `all-features`                 | boolean | `true`            | `--all-features` for build/test                            |
+| `nextest`                      | boolean | `true`            | Use nextest for validation                                 |
+| `generate-release-notes`       | boolean | `false`           | Generate via git-iris                                      |
+| `generate-changelog`           | boolean | `false`           | Update CHANGELOG.md                                        |
+| `release-notes-model`          | string  | `'claude-opus-5'` | AI model for release notes and changelog                   |
+| `release-notes-provider`       | string  | `'anthropic'`     | LLM provider for git-iris                                  |
+| `cicd-workflow`                | string  | `'cicd.yml'`      | Downstream workflow to trigger                             |
+| `pass-run-id`                  | boolean | `false`           | Pass release_run_id to downstream                          |
+| `patch-workspace-dep-versions` | boolean | `false`           | Patch version pins for path deps in root Cargo.toml        |
+| `version-files`                | string  | `''`              | Extra files to patch (JSON, YAML frontmatter)              |
+
+The `resume-release` input requires an explicit existing version tag reachable from the dispatch
+branch. Resume regenerates optional notes and retries dispatch without changing the version or
+changelog. Invalid workspace entries and missing version files fail before publication. JSON version
+fields must already exist as strings; Markdown version fields must be inside frontmatter.
 
 ### rust-build-artifacts.yml
 
 Cross-platform binary builds with a 4-target matrix.
 
-| Input              | Type    | Default                                             | Description             |
-| ------------------ | ------- | --------------------------------------------------- | ----------------------- |
-| `binaries`         | string  | **required**                                        | Binary names to extract |
-| `system-deps`      | string  | `''`                                                | Linux apt packages      |
-| `targets`          | string  | `'linux-amd64 linux-arm64 macos-arm64 windows-gnu'` | Build targets           |
-| `build-packages`   | boolean | `false`                                             | Build .deb + .rpm       |
-| `cargo-build-args` | string  | `'--release --locked'`                              | Extra build args        |
+| Input              | Type    | Default                                             | Description                                       |
+| ------------------ | ------- | --------------------------------------------------- | ------------------------------------------------- |
+| `binaries`         | string  | **required**                                        | Binary names to extract                           |
+| `system-deps`      | string  | `''`                                                | Linux apt packages                                |
+| `targets`          | string  | `'linux-amd64 linux-arm64 macos-arm64 windows-gnu'` | Build targets                                     |
+| `build-packages`   | boolean | `false`                                             | Build .deb + .rpm                                 |
+| `cargo-profile`    | string  | `'release'`                                         | Cargo profile used for compilation and extraction |
+| `cargo-build-args` | string  | `'--locked'`                                        | Extra build args                                  |
+
+Select the output profile with `cargo-profile`. Extra arguments cannot override the profile, target,
+or target directory. Each Actions artifact contains a `binaries-<target>.tar.gz` archive preserving
+executable permissions. Extract the archive before running a downloaded binary.
 
 **Matrix:**
 
@@ -295,21 +292,9 @@ Cross-platform binary builds with a 4-target matrix.
 | `macos-arm64` | `macos-latest`     | `aarch64-apple-darwin`      |
 | `windows-gnu` | `windows-latest`   | `x86_64-pc-windows-gnu`     |
 
-**Example:**
-
-```yaml
-build:
-  uses: hyperb1iss/shared-workflows/.github/workflows/rust-build-artifacts.yml@v1
-  with:
-    binaries: 'my-cli my-tui'
-    system-deps: 'libdbus-1-dev pkg-config'
-    build-packages: true
-  secrets: inherit
-```
-
 ---
 
-## Python Workflows
+## Python workflows
 
 ### python-ci.yml
 
@@ -326,140 +311,67 @@ Lint + test using the Astral stack (uv, ruff). Single job with lint and test ste
 
 **Jobs:** `ci` (ruff check + format → pytest)
 
-> **Need service containers or a version matrix?** Reusable workflows can't attach services
-> conditionally. Define services and matrix strategy directly in the caller repo and inline the
-> setup there.
+For a version matrix, set `strategy.matrix` on the calling job and pass each version through
+`python-version`. Projects requiring service containers should define a local job with their service
+configuration.
 
-**Examples:**
+### python-build.yml
 
-```yaml
-# Simple — all defaults
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
-  secrets: inherit
+Builds wheels and source distributions, then uploads a distribution artifact. Publishing runs in an
+ordinary job in your repository; the complete example above uses PyPI trusted publishing.
 
-# With system deps and extra pytest args
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
-  with:
-    system-deps: 'libpq-dev'
-    pytest-args: '-x --timeout=60'
-  secrets: inherit
+| Input           | Type   | Default | Description                                                |
+| --------------- | ------ | ------- | ---------------------------------------------------------- |
+| `package-dir`   | string | `'.'`   | Directory containing pyproject.toml in single-package mode |
+| `package-names` | string | `''`    | Space-separated workspace package names                    |
+| `checkout-ref`  | string | `''`    | Git ref to build; empty uses the caller ref                |
 
-# Native Rust extension (needs Rust toolchain)
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/python-ci.yml@v1
-  with:
-    rust-toolchain: true
-  secrets: inherit
-```
+Additional build inputs are `python-version` (default `3.13`) and `artifact-name` (default
+`python-dists`). Give each matrix call a distinct artifact name.
 
-### python-publish.yml
-
-Publish to PyPI via OIDC trusted publishing. Supports single-package and multi-package workspace
-builds.
-
-| Input           | Type   | Default | Description                                         |
-| --------------- | ------ | ------- | --------------------------------------------------- |
-| `package-dir`   | string | `'.'`   | Directory with pyproject.toml (single-package mode) |
-| `package-names` | string | `''`    | Space-separated names for `uv build --package`      |
-| `checkout-ref`  | string | `''`    | Git ref to checkout (empty = caller ref)            |
-
-> **OIDC Note:** When using this reusable workflow, configure PyPI trusted publishing to point at
-> `hyperb1iss/shared-workflows/.github/workflows/python-publish.yml`, not the caller repo.
-
-**Examples:**
-
-```yaml
-# Single package (default)
-publish:
-  if: startsWith(github.ref, 'refs/tags/')
-  uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
-  secrets: inherit
-
-# Workspace with multiple packages
-publish:
-  uses: hyperb1iss/shared-workflows/.github/workflows/python-publish.yml@v1
-  with:
-    package-names: 'sibyl-core sibyl-dev'
-    checkout-ref: v0.1.0
-  permissions:
-    contents: read
-    id-token: write
-```
+The workflow output `artifact-name` identifies the uploaded distribution artifact. Download that
+artifact into `dist/` in the caller's publish job. The publish job needs no checkout, dependency
+installation, or build commands.
 
 ---
 
-## Common Workflows
+## Common workflows
 
 ### docs-deploy.yml
 
 VitePress or MkDocs → GitHub Pages with OIDC deployment.
 
-| Input            | Type   | Default       | Description                  |
-| ---------------- | ------ | ------------- | ---------------------------- |
-| `docs-dir`       | string | `'docs'`      | Path to docs directory       |
-| `node-version`   | string | `'24'`        | Node.js version              |
-| `pnpm-version`   | string | `'10'`        | pnpm version                 |
-| `engine`         | string | `'vitepress'` | `vitepress` or `mkdocs`      |
-| `python-version` | string | `'3.13'`      | Python version (MkDocs only) |
+| Input            | Type   | Default       | Description                           |
+| ---------------- | ------ | ------------- | ------------------------------------- |
+| `docs-dir`       | string | `'docs'`      | Path to docs directory                |
+| `node-version`   | string | `'24'`        | Node.js version                       |
+| `pnpm-version`   | string | `''`          | Project pin, or pnpm 10 when unpinned |
+| `engine`         | string | `'vitepress'` | `vitepress` or `mkdocs`               |
+| `python-version` | string | `'3.13'`      | Python version (MkDocs only)          |
 
-**Examples:**
-
-```yaml
-# VitePress (default)
-docs:
-  uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v1
-  secrets: inherit
-
-# MkDocs
-docs:
-  uses: hyperb1iss/shared-workflows/.github/workflows/docs-deploy.yml@v1
-  with:
-    engine: mkdocs
-  secrets: inherit
-```
+The `pnpm-version` input defaults to empty, selecting the project's `packageManager` or `devEngines`
+pin. Unpinned projects fall back to pnpm 10. An explicit override must agree with the project pin.
+The same resolution applies to moon CI.
 
 ### github-release.yml
 
 Creates a GitHub Release with AI-generated notes from
 [git-iris](https://github.com/hyperb1iss/git-iris).
 
-| Input                    | Type    | Default           | Description                      |
-| ------------------------ | ------- | ----------------- | -------------------------------- |
-| `release-notes-model`    | string  | `'claude-opus-5'` | AI model for release notes       |
-| `release-notes-provider` | string  | `'anthropic'`     | LLM provider                     |
-| `attach-artifacts`       | boolean | `false`           | Attach build artifacts           |
-| `artifact-pattern`       | string  | `'*'`             | Glob for artifacts to attach     |
-| `release-notes-run-id`   | string  | `''`              | Use pre-generated notes from run |
-| `draft`                  | boolean | `false`           | Create as draft release          |
+| Input                    | Type    | Default           | Description                                     |
+| ------------------------ | ------- | ----------------- | ----------------------------------------------- |
+| `tag`                    | string  | `''`              | Explicit release tag; empty uses the caller ref |
+| `release-notes-model`    | string  | `'claude-opus-5'` | AI model for release notes                      |
+| `release-notes-provider` | string  | `'anthropic'`     | LLM provider                                    |
+| `attach-artifacts`       | boolean | `false`           | Attach build artifacts                          |
+| `artifact-pattern`       | string  | `'binaries-*'     | Glob for artifacts to attach                    |
+| `release-notes-run-id`   | string  | `''`              | Use pre-generated notes from run                |
+| `draft`                  | boolean | `false`           | Create as draft release                         |
 
-**Examples:**
-
-```yaml
-# Simple release with AI notes
-release:
-  needs: publish
-  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
-  secrets: inherit
-
-# Release with artifacts from build job
-release:
-  needs: [publish, build]
-  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
-  with:
-    attach-artifacts: true
-  secrets: inherit
-
-# Pre-generated notes from release workflow
-release:
-  needs: [publish, build]
-  uses: hyperb1iss/shared-workflows/.github/workflows/github-release.yml@v1
-  with:
-    attach-artifacts: true
-    release-notes-run-id: ${{ inputs.release_run_id }}
-  secrets: inherit
-```
+The default artifact pattern selects binary builds. Set `artifact-pattern` explicitly to include
+other artifacts. Binary archives pass through unchanged; other selected artifacts are packaged as
+separate archive assets. The release retains target names and executable modes. Prerelease tags are
+marked as prereleases; stable releases only become latest when their version is newest.
 
 ### homebrew-update.yml
 
@@ -468,42 +380,34 @@ release. Generates CamelCase Ruby class names automatically (e.g., `git-iris` �
 
 | Input          | Type   | Default                     | Description                  |
 | -------------- | ------ | --------------------------- | ---------------------------- |
+| `license`      | string | `'Apache-2.0'`              | SPDX license expression      |
 | `formula-name` | string | **required**                | e.g., `git-iris` or `unifly` |
 | `tap-repo`     | string | `'hyperb1iss/homebrew-tap'` | Target tap repository        |
 | `description`  | string | **required**                | Formula description          |
 | `homepage`     | string | **required**                | Formula homepage URL         |
 | `binary-names` | string | **required**                | Space-separated binaries     |
 
-**Artifact contract:** callers must upload one artifact per target, named `binaries-linux-amd64`
-and/or `binaries-macos-arm64`, containing the raw binaries at the root. The workflow tars each
-artifact itself, uploads the tarball as a release asset, and generates a formula that runs
-`bin.install` for each name in `binary-names`.
+**Artifact contract:** provide at least one supported Actions artifact named `binaries-linux-amd64`
+or `binaries-macos-arm64`. Each must contain only its matching `binaries-<target>.tar.gz` archive,
+with binaries at the archive root. Rust builds produce this format and preserve executable
+permissions. Homebrew publishes platform archives and generates stanzas only for the platforms
+present.
 
-**Optional support payloads:** if the artifact also contains a top-level `share/` directory
-(terminfo, shell integration, man pages, themes, completions) or `etc/` directory (system config),
-the generated formula will install them into Homebrew's prefix automatically. Projects shipping only
-binaries can ignore this — the install steps are guarded by `Dir.exist?` checks.
+Optional top-level `share/` and `etc/` directories inside the payload install into Homebrew's
+prefix. The formula installs each entry in `binary-names` and uses the supplied SPDX `license`.
 
-**Requires secret:** `HOMEBREW_TAP_TOKEN`
+The workflow updates only the formula through GitHub's Contents API and refuses to downgrade an
+existing formula to an older version. Published archives are immutable: reruns reuse identical bytes
+and reject different content for the same version.
 
-**Example:**
-
-```yaml
-homebrew:
-  needs: [build, release]
-  uses: hyperb1iss/shared-workflows/.github/workflows/homebrew-update.yml@v1
-  with:
-    formula-name: git-iris
-    description: 'AI-powered Git workflow assistant'
-    homepage: 'https://github.com/hyperb1iss/git-iris'
-    binary-names: 'git-iris'
-  secrets: inherit
-```
+**Requires secret:** `HOMEBREW_TAP_TOKEN` (write access to the tap repository).
 
 ### docker-publish.yml
 
 Build and push Docker images to DockerHub, GHCR, or both. Supports dry-run mode (`push: false`)
-without requiring registry credentials.
+without requiring registry credentials. Only the newest stable SemVer version moves `latest`;
+prereleases and other tags retain their explicit tags. DockerHub publishing requires
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
 
 | Input           | Type    | Default         | Description                                     |
 | --------------- | ------- | --------------- | ----------------------------------------------- |
@@ -517,59 +421,22 @@ without requiring registry credentials.
 | `checkout-ref`  | string  | `''`            | Git ref to checkout (empty = caller ref)        |
 | `build-context` | string  | `'.'`           | Docker build context directory                  |
 
-**Examples:**
-
-```yaml
-# DockerHub only
-docker:
-  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
-  with:
-    image-name: hyperb1iss/my-app
-  secrets: inherit
-
-# Both registries, multi-platform
-docker:
-  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
-  with:
-    image-name: hyperb1iss/my-app
-    registry: 'docker.io, ghcr.io'
-    platforms: 'linux/amd64,linux/arm64'
-  secrets: inherit
-
-# GHCR with version override (monorepo publish)
-docker-api:
-  uses: hyperb1iss/shared-workflows/.github/workflows/docker-publish.yml@v1
-  with:
-    image-name: hyperb1iss/sibyl-api
-    registry: ghcr.io
-    dockerfile: apps/api/Dockerfile
-    version: v0.1.0
-    checkout-ref: v0.1.0
-  secrets: inherit
-```
-
 ---
 
-## Bun Workflows
+## Bun workflows
 
 ### bun-ci.yml
 
 Installs a Bun workspace from its committed lockfile, runs the repository's unified check script,
 then builds it.
 
-| Input               | Type    | Default    | Description                                 |
-| ------------------- | ------- | ---------- | ------------------------------------------- |
-| `bun-version`       | string  | `'1.3.14'` | Exact Bun version to install                |
-| `working-directory` | string  | `'.'`      | Workspace root                              |
-| `check-script`      | string  | `'check'`  | Package script containing all quality gates |
-| `build-script`      | string  | `'build'`  | Package script producing release artifacts  |
-| `run-build`         | boolean | `true`     | Run the build after checks pass             |
-
-```yaml
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/bun-ci.yml@v1
-  secrets: inherit
-```
+| Input               | Type    | Default   | Description                                 |
+| ------------------- | ------- | --------- | ------------------------------------------- |
+| `bun-version`       | string  | `'1.4.1'` | Exact Bun version to install                |
+| `working-directory` | string  | `'.'`     | Workspace root                              |
+| `check-script`      | string  | `'check'` | Package script containing all quality gates |
+| `build-script`      | string  | `'build'` | Package script producing release artifacts  |
+| `run-build`         | boolean | `true`    | Run the build after checks pass             |
 
 ### npm-publish.yml
 
@@ -578,7 +445,7 @@ Packages are published in the order listed by `package-dirs`.
 
 | Input          | Type    | Default    | Description                                  |
 | -------------- | ------- | ---------- | -------------------------------------------- |
-| `bun-version`  | string  | `'1.3.14'` | Exact Bun version to install                 |
+| `bun-version`  | string  | `'1.4.1'`  | Exact Bun version to install                 |
 | `package-dirs` | string  | `'.'`      | Newline-separated package directories        |
 | `checkout-ref` | string  | `''`       | Git ref to checkout                          |
 | `check-script` | string  | `'check'`  | Root release-verification script             |
@@ -586,25 +453,12 @@ Packages are published in the order listed by `package-dirs`.
 | `tag`          | string  | `'latest'` | npm distribution tag                         |
 | `dry-run`      | boolean | `false`    | Validate package contents without publishing |
 
-```yaml
-publish:
-  uses: hyperb1iss/shared-workflows/.github/workflows/npm-publish.yml@v1
-  permissions:
-    contents: read
-    id-token: write
-  with:
-    package-dirs: |
-      packages/library
-      packages/create-library
-  secrets: inherit
-```
-
 Configure npm's trusted publisher against the caller workflow filename, not `npm-publish.yml`.
 GitHub's OIDC identity is rooted at the workflow in the consuming repository.
 
 ---
 
-## Monorepo Workflows
+## Monorepo workflows
 
 ### moon-ci.yml
 
@@ -621,156 +475,37 @@ shadowing proto shims so the native setup-\* installs win, and caches `.moon/cac
 | `moon-tasks`     | string  | `'check'` | Space-separated tasks for `moon ci` (compat)  |
 | `node-version`   | string  | `'24'`    | Node.js version                               |
 | `python-version` | string  | `'3.13'`  | Python version                                |
-| `pnpm-version`   | string  | `'10'`    | pnpm version                                  |
+| `pnpm-version`   | string  | `''`      | Project pin, or pnpm 10 when unpinned         |
 
 **Command resolution:** If `moon-commands` is set, each line is executed via `bash -c` (must start
 with `moon`). If empty, falls back to `moon ci ${{ inputs.moon-tasks }}`.
-
-**Examples:**
-
-```yaml
-# Simple — backward-compatible
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/moon-ci.yml@v1
-  with:
-    moon-tasks: 'check lint test'
-  secrets: inherit
-
-# Polyglot with uv sync and explicit commands
-ci:
-  uses: hyperb1iss/shared-workflows/.github/workflows/moon-ci.yml@v1
-  with:
-    uv-sync: true
-    uv-sync-args: '--all-extras'
-    moon-commands: |
-      moon run :lint --query "language=[python, javascript]"
-      moon run :typecheck --query "language=[python, javascript]"
-      moon run :test --query "language=[python, javascript]"
-  secrets: inherit
-```
-
-> **Need service containers?** Reusable workflows can't attach services conditionally, and
-> project-specific service topology (FalkorDB, Temporal, Qdrant, …) doesn't generalize. Define
-> services directly in the caller repo and inline the moon setup there.
 
 ---
 
 ## Versioning
 
-Consumers pin to a major version tag:
+The `v2` tag advances only after repository CI succeeds for the exact main-branch commit being
+promoted. Promotion targets v2 explicitly and never selects a tag by its numeric rank. Existing
+`@v1` consumers remain on their frozen revision until they migrate.
 
-```yaml
-uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@v1
-```
-
-The `release-tags.yml` workflow automatically fast-forwards the highest major version tag (e.g.,
-`v1`) to the tip of `main` on every push. Non-breaking changes land immediately for all consumers
-without any release ceremony.
-
-**Breaking changes** require manually cutting the next major tag _before_ pushing:
-
-```bash
-git tag -a v2 -m "v2: describe the break"
-git push origin v2
-# Now push the breaking change — release-tags moves v2, v1 stays frozen
-```
-
-**Breaking** (bumps major): removing inputs, changing defaults, renaming jobs/outputs.
-
-**Non-breaking** (stays on current major): adding optional inputs, adding jobs, updating internal
-action versions, bug fixes.
-
----
+Removing an input, changing a default, or changing outputs requires a new major version. Additive
+inputs and compatible fixes can ship on the existing major. Internal action upgrades still need
+compatibility review, especially when upstream changes defaults.
 
 ## Development
 
-```bash
-# Format all YAML and Markdown
-just format
+Run `just setup` to install the locked npm and uv development tools, then `just check` before
+opening a PR. Local checks cover Prettier, actionlint, shellcheck, Ruff, ty, and pytest behavior
+fixtures. CI also runs a Bun consumer and builds, downloads, installs, and executes a Python
+distribution without a source checkout. Tag promotion waits for `lint`, `test`, `smoke`,
+`python-smoke`, and `verify-python-smoke`. Run `just format` to format YAML and Markdown. Test
+integrations by pointing a consumer at your branch or commit SHA before adopting a new major.
 
-# Check formatting
-just format-check
+The workflows are the source of truth for action pins. Most actions follow upstream major tags;
+`astral-sh/setup-uv` uses the exact `v10.0.1` release. Node 24 and Python 3.13 remain compatibility
+defaults. pnpm follows the project pin, with version 10 as the fallback for unpinned projects.
+Callers can select newer runtimes through the documented inputs. Bun defaults to 1.4.1.
 
-# Validate workflows against the GitHub Actions schema
-just lint
+## License
 
-# Everything CI runs
-just check
-```
-
-Both gates run in CI. Prettier catches formatting; `actionlint` catches what formatting cannot — an
-expression referencing a context that is not available there, a bad `needs` reference, a shellcheck
-error inside a `run:` block. Those parse as perfectly valid YAML and then fail the workflow at
-startup, so run `just check` before pushing.
-
-### Action Versions (pinned)
-
-All workflows use consistent, pinned action versions:
-
-```
-actions/cache/restore@v6
-actions/cache/save@v6
-actions/checkout@v7
-actions/configure-pages@v6
-actions/deploy-pages@v5
-actions/download-artifact@v8
-actions/setup-node@v7
-actions/setup-python@v7
-actions/upload-artifact@v7
-actions/upload-pages-artifact@v5
-astral-sh/setup-uv@v9.0.0
-docker/build-push-action@v7
-docker/login-action@v4
-docker/setup-buildx-action@v4
-docker/setup-qemu-action@v4
-dorny/paths-filter@v4
-dtolnay/rust-toolchain@nightly
-dtolnay/rust-toolchain@stable
-EmbarkStudios/cargo-deny-action@v2
-hyperb1iss/git-iris@v2
-moonrepo/setup-toolchain@v0
-oven-sh/setup-bun@v2
-pnpm/action-setup@v6
-pypa/gh-action-pypi-publish@release/v1
-rust-lang/crates-io-auth-action@v1
-softprops/action-gh-release@v3
-Swatinem/rust-cache@v2
-taiki-e/install-action@v2
-```
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes and run `just format`
-4. Test by pointing a consuming repo at your branch:
-   ```yaml
-   uses: hyperb1iss/shared-workflows/.github/workflows/rust-ci.yml@your-branch
-   ```
-5. Open a PR
-
----
-
-## ⚖️ License
-
-Licensed under the [Apache License 2.0](LICENSE).
-
----
-
-<p align="center">
-  <a href="https://github.com/hyperb1iss/shared-workflows">
-    <img src="https://img.shields.io/github/stars/hyperb1iss/shared-workflows?style=social" alt="Star on GitHub">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://ko-fi.com/hyperb1iss">
-    <img src="https://img.shields.io/badge/Ko--fi-Support%20Development-ff5e5b?logo=ko-fi&logoColor=white" alt="Ko-fi">
-  </a>
-</p>
-
-<p align="center">
-  <sub>
-    ✦ Built with obsession by <a href="https://hyperbliss.tech"><strong>Hyperbliss Technologies</strong></a> ✦
-  </sub>
-</p>
+[Apache 2.0](LICENSE). Built by [Hyperbliss Technologies](https://hyperbliss.tech).

@@ -47,17 +47,45 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: docker-${{ inputs.image-name }}-${{ github.ref_name }}
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.checkout-ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate image tags
+        id: meta
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+        run: |
+          python3 <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+
+          image = os.environ["IMAGE_NAME"]
+          version = (os.environ["VERSION_INPUT"] or os.environ["GITHUB_REF_NAME"]).removeprefix("v")
+          registries = [part.strip() for part in os.environ["REGISTRY"].split(",")]
+          if not re.fullmatch(r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+", image):
+              raise SystemExit("Image name must be a lowercase namespace/image path")
+          if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", version) or version == "latest":
+              raise SystemExit("Provide a valid explicit Docker version tag other than latest")
+          if not registries or len(set(registries)) != len(registries) or any(
+              registry not in {"docker.io", "ghcr.io"} for registry in registries
+          ):
+              raise SystemExit("Registry must contain docker.io and/or ghcr.io, without duplicates")
+          tags = [f"{registry}/{image}:{version}" for registry in registries]
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+              output.write(f"version={version}\ntags={','.join(tags)}\n")
+          PYTHON
 
       - name: Set up QEMU
         if: contains(inputs.platforms, ',') || contains(inputs.platforms, 'arm')
@@ -81,35 +109,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version tag
-        id: meta
-        env:
-          VERSION_INPUT: ${{ inputs.version }}
-          REGISTRY: ${{ inputs.registry }}
-          IMAGE_NAME: ${{ inputs.image-name }}
-        run: |
-          if [ -n "$VERSION_INPUT" ]; then
-            version="${VERSION_INPUT#v}"
-          else
-            version="${GITHUB_REF_NAME#v}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          # Build tag list based on registries
-          tags=""
-          IFS=',' read -ra registries <<< "$REGISTRY"
-          for reg in "${registries[@]}"; do
-            reg=$(echo "$reg" | xargs)  # trim whitespace
-            if [ "$reg" = "docker.io" ]; then
-              tags="${tags}${IMAGE_NAME}:${version},${IMAGE_NAME}:latest,"
-            elif [ "$reg" = "ghcr.io" ]; then
-              tags="${tags}ghcr.io/${IMAGE_NAME}:${version},ghcr.io/${IMAGE_NAME}:latest,"
-            fi
-          done
-          tags="${tags%,}"  # remove trailing comma
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ${{ inputs.build-context }}
@@ -118,5 +119,65 @@ jobs:
           push: ${{ inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           build-args: ${{ inputs.build-args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ inputs.image-name }}
+          cache-to: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && format('type=gha,mode=max,scope={0}', inputs.image-name) || '' }}
+
+  promote:
+    if: inputs.push
+    needs: publish
+    runs-on: ubuntu-latest
+    # Only writers of this image's mutable latest tag share this lock.
+    concurrency:
+      group: shared-docker-latest-${{ inputs.image-name }}
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        if: contains(inputs.registry, 'docker.io')
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        if: contains(inputs.registry, 'ghcr.io')
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote newest stable image
+        if: inputs.push
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Only stable semantic versions are eligible for latest.'
+            exit 0
+          fi
+          git fetch origin --tags
+          newest=$(git tag -l | sed 's/^v//' | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1 || true)
+          if [ "$VERSION" != "$newest" ]; then
+            echo 'A newer stable tag exists, or this version has no matching Git tag; leaving latest unchanged.'
+            exit 0
+          fi
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo '::error::Build did not return a valid image digest.'
+            exit 1
+          fi
+          IFS=',' read -ra registries <<< "$REGISTRY"
+          for registry in "${registries[@]}"; do
+            registry="${registry//[[:space:]]/}"
+            docker buildx imagetools create --tag "$registry/$IMAGE_NAME:latest" "$registry/$IMAGE_NAME@$DIGEST"
+          done

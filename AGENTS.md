@@ -20,11 +20,11 @@ should go from 50-100+ lines of workflow YAML to ~10 lines calling a shared work
   homebrew-update.yml        # Update homebrew-tap formula
   docker-publish.yml         # Build + push Docker images
   python-ci.yml              # Lint, test for Python (uv) projects
-  python-publish.yml         # Publish to PyPI (trusted publishing)
+  python-build.yml           # Build distributions for caller-owned PyPI publishing
   bun-ci.yml                 # Lint, test, and build Bun workspaces
   npm-publish.yml            # Publish npm packages (trusted publishing)
   moon-ci.yml                # moonrepo workspace CI
-  release-tags.yml           # Auto-move major version tag on push
+  release-tags.yml           # Promote v2 after CI validates main
 docs/                        # Documentation
 ```
 
@@ -32,7 +32,7 @@ docs/                        # Documentation
 
 - All workflows use `workflow_call` trigger with typed inputs
 - Secrets passed via `secrets: inherit` (same org)
-- Version pinned via tags (e.g., `@v1`)
+- Version pinned via tags (e.g., `@v2`)
 - Parameterize differences, don't fork workflows
 - Smart defaults: nextest, cargo-deny, change detection, all-features ON by default
 - Cache only saved on main branch pushes (save-if pattern)
@@ -58,7 +58,7 @@ actions/setup-node@v7
 actions/setup-python@v7
 actions/upload-artifact@v7
 actions/upload-pages-artifact@v5
-astral-sh/setup-uv@v9.0.0
+astral-sh/setup-uv@v10.0.1
 docker/build-push-action@v7
 docker/login-action@v4
 docker/setup-buildx-action@v4
@@ -80,19 +80,19 @@ taiki-e/install-action@v2
 
 ## Workflow Quick Reference
 
-| Workflow               | Key Inputs                                                 | Consumers                                      |
-| ---------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
-| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt   | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-publish`         | crates, publish-delay, system-deps                         | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-release`         | version/bump, workspace-crates, version-files              | opaline, unifi-cli, git-iris, silkprint        |
-| `rust-build-artifacts` | binaries, targets, build-packages                          | unifi-cli, git-iris                            |
-| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                        | sibyl, 6+ repos                                |
-| `github-release`       | attach-artifacts, release-notes-run-id                     | 6+ repos                                       |
-| `homebrew-update`      | formula-name, binary-names                                 | unifi-cli, git-iris                            |
-| `docker-publish`       | image-name, registry, version, checkout-ref                | sibyl, haven, git-iris, droidmind              |
-| `python-ci`            | python-version, ruff, pytest, rust-toolchain               | 6+ repos                                       |
-| `python-publish`       | package-names, checkout-ref, package-dir                   | sibyl, haven, droidmind, uchroma, signalrgb-ha |
-| `bun-ci`               | bun-version, working-directory, check-script, build-script | prezzer                                        |
-| `npm-publish`          | bun-version, package-dirs, checkout-ref, tag, dry-run      | prezzer                                        |
-| `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps              | haven                                          |
-| `release-tags`         | _(internal, no inputs)_                                    | shared-workflows                               |
+| Workflow               | Key Inputs                                                 | Consumers                                 |
+| ---------------------- | ---------------------------------------------------------- | ----------------------------------------- |
+| `rust-ci`              | workspace, system-deps, nextest, cargo-deny, nightly-fmt   | opaline, unifi-cli, git-iris, silkprint   |
+| `rust-publish`         | crates, publish-delay, system-deps                         | opaline, unifi-cli, git-iris, silkprint   |
+| `rust-release`         | version/bump, workspace-crates, version-files              | opaline, unifi-cli, git-iris, silkprint   |
+| `rust-build-artifacts` | binaries, targets, build-packages                          | unifi-cli, git-iris                       |
+| `docs-deploy`          | engine (vitepress/mkdocs), docs-dir                        | sibyl, 6+ repos                           |
+| `github-release`       | attach-artifacts, release-notes-run-id                     | 6+ repos                                  |
+| `homebrew-update`      | formula-name, binary-names                                 | unifi-cli, git-iris                       |
+| `docker-publish`       | image-name, registry, version, checkout-ref                | sibyl, haven, git-iris, droidmind         |
+| `python-ci`            | python-version, ruff, pytest, rust-toolchain               | 6+ repos                                  |
+| `python-build`         | package-names, checkout-ref, package-dir                   | v2 migration target for Python publishers |
+| `bun-ci`               | bun-version, working-directory, check-script, build-script | prezzer                                   |
+| `npm-publish`          | bun-version, package-dirs, checkout-ref, tag, dry-run      | prezzer                                   |
+| `moon-ci`              | moon-commands, uv-sync, env-vars, system-deps              | haven                                     |
+| `release-tags`         | _(internal, no inputs)_                                    | shared-workflows                          |

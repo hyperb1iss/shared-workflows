@@ -1,0 +1,11 @@
+{
+  "name": "shared-workflows",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write \"**/*.{yml,yaml,md,json}\"",
+    "format:check": "prettier --check \"**/*.{yml,yaml,md,json}\""
+  },
+  "devDependencies": {
+    "prettier": "3.9.6"
+  }
+}

@@ -15,9 +15,9 @@ on:
         type: string
         default: '24'
       pnpm-version:
-        description: 'pnpm version'
+        description: 'pnpm version (empty = project pin, falling back to 10)'
         type: string
-        default: '10'
+        default: ''
       engine:
         description: 'vitepress or mkdocs'
         type: string
@@ -32,13 +32,22 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate documentation engine
+        env:
+          ENGINE: ${{ inputs.engine }}
+        run: |
+          case "$ENGINE" in
+            vitepress|mkdocs) ;;
+            *) echo "::error::Unknown documentation engine: $ENGINE"; exit 1 ;;
+          esac
+
   # ── VitePress ─────────────────────────────────────────────────────
   deploy-vitepress:
+    needs: validate
     if: inputs.engine == 'vitepress'
     runs-on: ubuntu-latest
     environment:
@@ -49,19 +58,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ inputs.pnpm-version }}
-
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
-          cache: pnpm
-          cache-dependency-path: ${{ inputs.docs-dir }}/pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Resolve pnpm version
+        id: pnpm-version
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm-version }}
+          PACKAGE_JSON: ${{ inputs.docs-dir }}/package.json
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync(process.env.PACKAGE_JSON, 'utf8'));
+          const pinned = manifest.packageManager?.startsWith('pnpm@') ||
+            manifest.devEngines?.packageManager?.name === 'pnpm';
+          const version = process.env.PNPM_VERSION || (pinned ? '' : '10');
+          if (/[\r\n]/.test(version)) throw new Error('Invalid pnpm version');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + version + '\n');
+          JS
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ steps.pnpm-version.outputs.version }}
+          package_json_file: ${{ inputs.docs-dir }}/package.json
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm cache
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install dependencies
         working-directory: ${{ inputs.docs-dir }}
         run: pnpm install --frozen-lockfile
+
+      - name: Save pnpm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: Build
         working-directory: ${{ inputs.docs-dir }}
@@ -79,6 +122,9 @@ jobs:
 
   # ── MkDocs ────────────────────────────────────────────────────────
   deploy-mkdocs:
+    needs: validate
+    env:
+      UV_PYTHON: ${{ inputs.python-version }}
     if: inputs.engine == 'mkdocs'
     runs-on: ubuntu-latest
     environment:
@@ -90,7 +136,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-python@v7
         with:
@@ -98,11 +146,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: ${{ inputs.docs-dir }}
-        run: uv sync
+        run: uv sync --locked
 
       - name: Build
         working-directory: ${{ inputs.docs-dir }}
-        run: uv run mkdocs build
+        run: uv run --locked mkdocs build
 
       - uses: actions/configure-pages@v6
 

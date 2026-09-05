@@ -1,0 +1,81 @@
+name: Python Build
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: 'Directory containing pyproject.toml (single-package mode)'
+        type: string
+        default: '.'
+      package-names:
+        description: 'Space-separated package names for workspace builds'
+        type: string
+        default: ''
+      checkout-ref:
+        description: 'Git ref to build (empty = caller ref)'
+        type: string
+        default: ''
+      python-version:
+        description: 'Python version used to build distributions'
+        type: string
+        default: '3.13'
+      artifact-name:
+        description: 'Unique artifact name for the caller to download and publish'
+        type: string
+        default: 'python-dists'
+    outputs:
+      artifact-name:
+        description: 'Artifact containing wheels and source distributions'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+permissions:
+  contents: read
+
+env:
+  UV_PYTHON: ${{ inputs.python-version }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.ref }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Build distributions
+        env:
+          PACKAGE_DIR: ${{ inputs.package-dir }}
+          PACKAGE_NAMES: ${{ inputs.package-names }}
+        run: |
+          dist_dir=$(mktemp -d "$RUNNER_TEMP/python-dists.XXXXXX")
+          echo "DIST_DIR=$dist_dir" >> "$GITHUB_ENV"
+          if [ -n "$PACKAGE_NAMES" ]; then
+            read -ra names <<< "$PACKAGE_NAMES"
+            if [ "${#names[@]}" -eq 0 ]; then
+              echo "::error::package-names must name at least one package"
+              exit 1
+            fi
+            for package in "${names[@]}"; do
+              uv build --package "$package" --out-dir "$dist_dir"
+            done
+          else
+            uv build "$PACKAGE_DIR" --out-dir "$dist_dir"
+          fi
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ env.DIST_DIR }}/*
+          if-no-files-found: error

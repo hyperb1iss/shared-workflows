@@ -20,6 +20,10 @@ on:
         description: 'Build + test only, skip publish'
         type: boolean
         default: false
+      resume-release:
+        description: 'Retry notes and downstream dispatch for an existing explicit version; never mutate its tag'
+        type: boolean
+        default: false
       system-deps:
         description: 'apt packages for build/test'
         type: string
@@ -29,7 +33,7 @@ on:
         type: boolean
         default: false
       workspace-crates:
-        description: 'Space-separated crate names for workspace version patching'
+        description: 'Space-separated workspace crate names or directory paths for version patching'
         type: string
         default: ''
       all-features:
@@ -93,10 +97,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+  CARGO_WORKSPACE: ${{ inputs.workspace }}
+  CARGO_ALL_FEATURES: ${{ inputs.all-features }}
 
 jobs:
   release:
@@ -117,9 +119,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y "${deps[@]}"
 
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install nextest
         if: inputs.nextest
@@ -137,209 +147,304 @@ jobs:
         env:
           VERSION_INPUT: ${{ inputs.version }}
           BUMP: ${{ inputs.bump }}
+          RESUME_RELEASE: ${{ inputs.resume-release }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          # Prefer latest git tag, fall back to Cargo.toml
-          CURRENT_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
-          if [ -n "$CURRENT_TAG" ]; then
-            current="${CURRENT_TAG#v}"
-          else
-            current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
-          fi
-          echo "current=$current" >> "$GITHUB_OUTPUT"
-          echo "📌 Current version: $current (from tag: ${CURRENT_TAG:-none})"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tomllib
 
-          if [ -n "$VERSION_INPUT" ]; then
-            new="$VERSION_INPUT"
-          else
-            IFS='.' read -r major minor patch <<< "$current"
-            case "$BUMP" in
-              major) new="$((major + 1)).0.0" ;;
-              minor) new="$major.$((minor + 1)).0" ;;
-              patch) new="$major.$minor.$((patch + 1))" ;;
-              *) echo "::error::Invalid bump type: $BUMP"; exit 1 ;;
-            esac
-          fi
 
-          # Validate format
-          if ! echo "$new" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Invalid version format: $new (expected: X.Y.Z)"
-            exit 1
-          fi
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
 
-          # Check tag doesn't already exist
-          if git tag -l "v$new" | grep -q "v$new"; then
-            echo "::error::Tag v$new already exists"
-            exit 1
-          fi
 
-          echo "new=$new" >> "$GITHUB_OUTPUT"
-          echo "🏷️ Version: $current → $new"
+          pattern = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+          if os.environ['REF_TYPE'] != 'branch':
+              raise SystemExit('Release orchestration must run from a branch')
+          tags = [tag for tag in git('tag', '--merged', 'HEAD').splitlines()
+                  if re.fullmatch('v' + pattern, tag)]
+          tags.sort(key=lambda tag: tuple(map(int, tag[1:].split('.'))))
+          manifest = tomllib.loads(Path('Cargo.toml').read_text())
+          package = manifest.get('package', {})
+          manifest_version = package.get('version', {})
+          if isinstance(manifest_version, dict):
+              manifest_version = manifest.get('workspace', {}).get('package', {}).get('version')
+          current = tags[-1][1:] if tags else manifest_version
+          if not isinstance(current, str) or not re.fullmatch(pattern, current):
+              raise SystemExit('Cannot determine a stable X.Y.Z version from tags or Cargo.toml')
+          new = os.environ['VERSION_INPUT']
+          if not new:
+              parts = list(map(int, current.split('.')))
+              try:
+                  index = ['major', 'minor', 'patch'].index(os.environ['BUMP'])
+              except ValueError:
+                  raise SystemExit('Invalid bump type') from None
+              parts[index] += 1
+              parts[index + 1:] = [0] * (2 - index)
+              new = '.'.join(map(str, parts))
+          if not re.fullmatch(pattern, new):
+              raise SystemExit('Version must use stable X.Y.Z format without leading zeros')
+          ref = f'refs/tags/v{new}'
+          exists = subprocess.run(['git', 'show-ref', '--verify', '--quiet', ref]).returncode == 0
+          resume = os.environ['RESUME_RELEASE'] == 'true'
+          if resume:
+              if not os.environ['VERSION_INPUT'] or not exists:
+                  raise SystemExit('resume-release requires an explicit version with an existing tag')
+              subprocess.run(['git', 'merge-base', '--is-ancestor', ref, 'HEAD'], check=True)
+              previous = [tag for tag in tags if tuple(map(int, tag[1:].split('.'))) < tuple(map(int, new.split('.')))]
+          else:
+              if exists:
+                  raise SystemExit(f'Tag v{new} already exists; use resume-release to retry dispatch')
+              if tuple(map(int, new.split('.'))) < tuple(map(int, current.split('.'))):
+                  raise SystemExit('New version must not be lower than the current version')
+              previous = tags
+          base = previous[-1] if previous else git('rev-list', '--max-parents=0', 'HEAD').splitlines()[0]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'current={current}\nnew={new}\nfrom={base}\n')
+          print(f'Version: {current} → {new}')
+          PYTHON
 
-      - name: Patch Cargo.toml version
+      - name: Patch release versions
+        id: patch
+        if: ${{ !inputs.resume-release }}
         env:
           NEW_VERSION: ${{ steps.version.outputs.new }}
-        run: |
-          sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" Cargo.toml
-
-      - name: Patch workspace crate versions
-        if: inputs.workspace-crates != ''
-        env:
           WORKSPACE_CRATES: ${{ inputs.workspace-crates }}
-          NEW_VERSION: ${{ steps.version.outputs.new }}
-        run: |
-          read -ra crates <<< "$WORKSPACE_CRATES"
-          for crate in "${crates[@]}"; do
-            crate_toml="$crate/Cargo.toml"
-            if [ -f "$crate_toml" ]; then
-              sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" "$crate_toml"
-              echo "📦 Patched $crate_toml"
-            fi
-          done
-
-      - name: Patch workspace dependency version pins
-        if: inputs.patch-workspace-dep-versions
-        env:
-          NEW_VERSION: ${{ steps.version.outputs.new }}
-        run: |
-          # Update version = "..." on lines that also contain path = "..." (workspace path deps)
-          sed -i "/path = \"/s/version = \"[^\"]*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
-          echo "📦 Updated workspace dependency version pins"
-
-      - name: Patch extra version files
-        if: inputs.version-files != ''
-        env:
+          PATCH_DEPENDENCIES: ${{ inputs.patch-workspace-dep-versions }}
           VERSION_FILES: ${{ inputs.version-files }}
-          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          echo "$VERSION_FILES" | while IFS= read -r entry; do
-            # Skip empty lines
-            [ -z "$entry" ] && continue
+          uv run --no-project --with tomlkit==0.15.1 python - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tomlkit
 
-            # Split on | for optional jq path (default: .version)
-            file="${entry%%|*}"
-            jq_path="${entry#*|}"
-            [ "$jq_path" = "$file" ] && jq_path=".version"
+          root = Path.cwd().resolve()
+          version = os.environ['NEW_VERSION']
+          metadata = json.loads(subprocess.check_output(
+              ['cargo', 'metadata', '--no-deps', '--format-version', '1'], text=True))
+          members = {package['name']: Path(package['manifest_path']).resolve()
+                     for package in metadata['packages'] if package['id'] in metadata['workspace_members']}
+          documents = {}
 
-            # Trim whitespace
-            file="$(echo "$file" | xargs)"
-            jq_path="$(echo "$jq_path" | xargs)"
 
-            if [ ! -f "$file" ]; then
-              echo "::warning::Version file not found: $file"
-              continue
-            fi
+          def document(path):
+              path.relative_to(root)
+              if path not in documents:
+                  documents[path] = tomlkit.parse(path.read_text())
+              return documents[path]
 
-            case "$file" in
-              *.json)
-                jq "$jq_path = \"$NEW_VERSION\"" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-                echo "📦 Patched $file ($jq_path)"
-                ;;
-              *.md|*.yml|*.yaml)
-                # Patch "version: X.Y.Z" or 'version: "X.Y.Z"' in YAML frontmatter
-                sed -i "0,/^version:.*/s/^version:.*/version: \"$NEW_VERSION\"/" "$file"
-                echo "📦 Patched $file (frontmatter)"
-                ;;
-              *)
-                echo "::warning::Unsupported file type: $file"
-                ;;
-            esac
-          done
+
+          root_path = root / 'Cargo.toml'
+          root_doc = document(root_path)
+          selected = set()
+          if 'package' in root_doc:
+              selected.add(root_path)
+          for name in os.environ['WORKSPACE_CRATES'].split():
+              path = members.get(name)
+              if path is None:
+                  candidate = (root / name / 'Cargo.toml').resolve()
+                  if candidate not in members.values():
+                      raise SystemExit(f'Unknown workspace crate name or path: {name}')
+                  path = candidate
+              selected.add(path)
+          if 'version' in root_doc.get('workspace', {}).get('package', {}):
+              root_doc['workspace']['package']['version'] = version
+              for path in members.values():
+                  if isinstance(document(path).get('package', {}).get('version'), dict):
+                      selected.add(path)
+          if not selected and 'version' not in root_doc.get('workspace', {}).get('package', {}):
+              raise SystemExit('No package versions selected; provide workspace-crates')
+          for path in selected:
+              package = document(path)['package']
+              old = package.get('version')
+              if isinstance(old, dict) and old.get('workspace'):
+                  if 'version' not in root_doc.get('workspace', {}).get('package', {}):
+                      raise SystemExit('Inherited version has no workspace.package.version')
+              elif isinstance(old, str):
+                  package['version'] = version
+              else:
+                  raise SystemExit(f'No editable package version in {path}')
+
+
+          def patch_dependencies(table, manifest):
+              for key, value in table.items():
+                  if key in ('dependencies', 'dev-dependencies', 'build-dependencies'):
+                      for dependency in value.values():
+                          if isinstance(dependency, dict) and 'path' in dependency and 'version' in dependency:
+                              target = (manifest.parent / dependency['path'] / 'Cargo.toml').resolve()
+                              if target in selected:
+                                  dependency['version'] = version
+                  elif isinstance(value, dict):
+                      patch_dependencies(value, manifest)
+
+
+          if os.environ['PATCH_DEPENDENCIES'] == 'true':
+              for path in {root_path, *members.values()}:
+                  patch_dependencies(document(path), path)
+          patched = []
+          for path, value in documents.items():
+              content = tomlkit.dumps(value)
+              if content != path.read_text():
+                  path.write_text(content)
+                  patched.append(str(path.relative_to(root)))
+          for entry in os.environ['VERSION_FILES'].splitlines():
+              if not entry.strip():
+                  continue
+              filename, separator, expression = entry.partition('|')
+              path = (root / filename.strip()).resolve()
+              path.relative_to(root)
+              if not path.is_file():
+                  raise SystemExit(f'Version file not found: {filename}')
+              if path.suffix == '.json':
+                  expression = expression.strip() if separator else '.version'
+                  subprocess.run(['jq', '-e', f'({expression}) | type == "string"', str(path)],
+                                 check=True, stdout=subprocess.DEVNULL)
+                  content = subprocess.check_output(
+                      ['jq', '--arg', 'version', version, f'({expression}) = $version', str(path)], text=True)
+              elif path.suffix in ('.md', '.yml', '.yaml'):
+                  content = path.read_text()
+                  start, end = 0, len(content)
+                  if path.suffix == '.md':
+                      frontmatter = re.match(r'\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)', content, re.DOTALL)
+                      if not frontmatter:
+                          raise SystemExit(f'Missing YAML frontmatter: {filename}')
+                      start, end = frontmatter.span(1)
+                  section, count = re.subn(r'^version\s*:.*$', f'version: "{version}"', content[start:end], flags=re.MULTILINE)
+                  if count != 1:
+                      raise SystemExit(f'Expected one top-level version field: {filename}')
+                  content = content[:start] + section + content[end:]
+              else:
+                  raise SystemExit(f'Unsupported version file type: {filename}')
+              path.write_text(content)
+              patched.append(str(path.relative_to(root)))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('files=' + json.dumps(sorted(set(patched))) + '\n')
+          PYTHON
 
       - name: Update lockfile
-        run: cargo generate-lockfile
+        if: ${{ !inputs.resume-release }}
+        run: cargo metadata --format-version 1 > /dev/null
 
       - name: Build
-        run: >-
-          cargo build
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        if: ${{ !inputs.resume-release }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo build "${args[@]}"
 
       - name: Run tests (nextest)
-        if: inputs.nextest
-        run: >-
-          cargo nextest run
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        if: ${{ inputs.nextest && !inputs.resume-release }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo nextest run "${args[@]}"
 
       - name: Run tests (cargo test)
-        if: ${{ !inputs.nextest }}
-        run: >-
-          cargo test
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
+        if: ${{ !inputs.nextest && !inputs.resume-release }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo test "${args[@]}"
+
+      - name: Run doc tests
+        if: ${{ inputs.nextest && !inputs.resume-release }}
+        run: |
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo test --doc "${args[@]}"
 
       - name: Clippy
-        run: >-
-          cargo clippy
-          --locked
-          ${{ inputs.workspace && '--workspace' || '' }}
-          ${{ inputs.all-features && '--all-features' || '' }}
-          -- -D warnings
-
-      - name: Commit version bump
-        if: ${{ !inputs.dry_run }}
-        env:
-          WORKSPACE_CRATES: ${{ inputs.workspace-crates }}
-          VERSION_FILES: ${{ inputs.version-files }}
-          NEW_VERSION: ${{ steps.version.outputs.new }}
+        if: ${{ !inputs.resume-release }}
         run: |
-          git add Cargo.toml Cargo.lock
-          if [ -n "$WORKSPACE_CRATES" ]; then
-            read -ra crates <<< "$WORKSPACE_CRATES"
-            for crate in "${crates[@]}"; do
-              [ -f "$crate/Cargo.toml" ] && git add "$crate/Cargo.toml"
-            done
-          fi
-          if [ -n "$VERSION_FILES" ]; then
-            echo "$VERSION_FILES" | while IFS= read -r entry; do
-              entry="$(echo "$entry" | xargs)"
-              [ -z "$entry" ] && continue
-              file="${entry%%|*}"
-              [ -n "$file" ] && [ -f "$file" ] && git add "$file"
-            done || true
-          fi
-          git commit -m "release: v${NEW_VERSION}"
-
-      - name: Create and push tag
-        if: ${{ !inputs.dry_run }}
-        env:
-          NEW_VERSION: ${{ steps.version.outputs.new }}
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
-          git push origin "HEAD:${BRANCH}"
-          git push origin "v${NEW_VERSION}"
+          args=(--locked)
+          if [ "$CARGO_WORKSPACE" = true ]; then args+=(--workspace); fi
+          if [ "$CARGO_ALL_FEATURES" = true ]; then args+=(--all-features); fi
+          cargo clippy "${args[@]}" -- -D warnings
 
       - name: Generate release notes
         if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
         uses: hyperb1iss/git-iris@v2
         with:
+          from: ${{ steps.version.outputs.from }}
+          to: ${{ inputs.resume-release && format('v{0}', steps.version.outputs.new) || 'HEAD' }}
+          version-name: ${{ steps.version.outputs.new }}
+          output-file: release_notes.md
           provider: ${{ inputs.release-notes-provider }}
           model: ${{ inputs.release-notes-model }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Generate changelog
+        if: ${{ !inputs.dry_run && !inputs.resume-release && inputs.generate-changelog }}
+        uses: hyperb1iss/git-iris@v2
+        with:
+          command: changelog
+          from: ${{ steps.version.outputs.from }}
+          to: HEAD
+          version-name: ${{ steps.version.outputs.new }}
+          output-file: CHANGELOG.md
+          update-file: 'true'
+          provider: ${{ inputs.release-notes-provider }}
+          model: ${{ inputs.release-notes-model }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Prepare release notes aliases
+        if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
+        run: cp release_notes.md RELEASE_NOTES.md
 
       - name: Upload release notes artifact
         if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
         uses: actions/upload-artifact@v7
         with:
           name: release-notes
-          path: release_notes.md
+          path: |
+            release_notes.md
+            RELEASE_NOTES.md
+          if-no-files-found: error
+          overwrite: true
 
-      - name: Generate changelog
-        if: ${{ !inputs.dry_run && inputs.generate-changelog }}
+      - name: Commit version bump
+        if: ${{ !inputs.dry_run && !inputs.resume-release }}
+        env:
+          PATCHED_FILES: ${{ steps.patch.outputs.files }}
+          GENERATE_CHANGELOG: ${{ inputs.generate-changelog }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+          files = json.loads(os.environ['PATCHED_FILES']) + ['Cargo.lock']
+          if os.environ['GENERATE_CHANGELOG'] == 'true':
+              files.append('CHANGELOG.md')
+          subprocess.run(['git', 'add', '--', *files], check=True)
+          message = (
+              f"release: v{os.environ['NEW_VERSION']}\n\n"
+              "Update package versions and release metadata together so the tag\n"
+              "identifies the complete release source.\n"
+          )
+          if subprocess.run(['git', 'diff', '--cached', '--quiet']).returncode != 0:
+              subprocess.run(['git', 'commit', '-F', '-'], input=message, text=True, check=True)
+          PYTHON
+
+      - name: Create and push tag
+        if: ${{ !inputs.dry_run && !inputs.resume-release }}
         env:
           NEW_VERSION: ${{ steps.version.outputs.new }}
-          RELEASE_NOTES_MODEL: ${{ inputs.release-notes-model }}
-          RELEASE_NOTES_PROVIDER: ${{ inputs.release-notes-provider }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          cargo install git-iris || true
-          git-iris changelog --provider "$RELEASE_NOTES_PROVIDER" --model "$RELEASE_NOTES_MODEL"
-          git add CHANGELOG.md
-          git commit -m "docs: update changelog for v${NEW_VERSION}"
-          git push origin HEAD
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/v${NEW_VERSION}"
 
       - name: Trigger downstream workflow
         if: ${{ !inputs.dry_run }}
@@ -358,13 +463,25 @@ jobs:
 
       - name: Summary
         env:
+          RESUME_RELEASE: ${{ inputs.resume-release }}
           DRY_RUN: ${{ inputs.dry_run }}
           CICD_WORKFLOW: ${{ inputs.cicd-workflow }}
           CURRENT_VERSION: ${{ steps.version.outputs.current }}
           NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
           {
-            if [ "$DRY_RUN" = "true" ]; then
+            if [ "$RESUME_RELEASE" = "true" ]; then
+              echo "## Resume release v${NEW_VERSION}"
+              echo ""
+              echo "Existing tag verified: v${NEW_VERSION}"
+              echo "Build and tests were not rerun."
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "Dry run: no release notes generated or downstream workflow dispatched."
+              else
+                echo "Existing tag reused without modification."
+                echo "Downstream workflow triggered: ${CICD_WORKFLOW}"
+              fi
+            elif [ "$DRY_RUN" = "true" ]; then
               echo "## Release [DRY RUN] v${NEW_VERSION}"
               echo ""
               echo "Build and tests passed. Run again without dry-run to publish."
