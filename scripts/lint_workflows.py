@@ -61,12 +61,14 @@ def queue_errors(path: Path) -> list[str]:
                 continue
             if queue.value == "max":
                 cancellations = members(section, "cancel-in-progress")
+                if not cancellations:
+                    continue
                 if len(cancellations) != 1 or not (
                     isinstance(cancellations[0], ScalarNode)
                     and cancellations[0].tag == "tag:yaml.org,2002:bool"
                     and cancellations[0].value.lower() == "false"
                 ):
-                    report(queue, "queue: max requires an explicit cancel-in-progress: false")
+                    report(queue, "queue: max requires cancel-in-progress to be absent or false")
     return errors
 
 

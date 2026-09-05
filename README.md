@@ -120,8 +120,6 @@ for generated release notes.
 # .github/workflows/cicd.yml
 name: Release artifacts
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -153,7 +151,10 @@ jobs:
 
 Dispatch this workflow against a version tag. To automate version changes, add a separate caller for
 `rust-release.yml` with `contents: write` and `actions: write`, and set `cicd-workflow` to
-`cicd.yml`. Branch protection may require its optional `release-token` secret.
+`cicd.yml`. Branch protection may require its optional `release-token` secret. Keep this downstream
+workflow dispatch-only: a personal token can also trigger tag-push workflows, causing duplicate
+publication if both triggers are enabled. For manual-tag pipelines without the release orchestrator,
+use a tag-push trigger instead.
 
 ## Pages deployment
 

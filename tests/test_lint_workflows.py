@@ -33,7 +33,8 @@ def lint(tmp_path: Path, concurrency: str, *, job_scope: bool = False, extra: st
 
 @pytest.mark.parametrize("job_scope", [False, True])
 @pytest.mark.parametrize(
-    "queue", ["queue: single", "queue: max\ncancel-in-progress: false", 'queue: "single"']
+    "queue",
+    ["queue: single", "queue: max", "queue: max\ncancel-in-progress: false", 'queue: "single"'],
 )
 def test_valid_queues(tmp_path: Path, job_scope: bool, queue: str):
     result = lint(tmp_path, queue, job_scope=job_scope)
@@ -53,7 +54,6 @@ def test_valid_queues(tmp_path: Path, job_scope: bool, queue: str):
         "queue: max\ncancel-in-progress: true",
         'queue: max\ncancel-in-progress: "false"',
         "queue: max\ncancel-in-progress: ${{ false }}",
-        "queue: max",
         "queue: single\nqueue: single",
     ],
 )
