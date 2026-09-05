@@ -23,10 +23,16 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run format:check
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: actionlint@1.7.12
       - name: Validate Actions schema and shell scripts
         run: |
-          docker run --rm -v "$PWD:/repo" --workdir /repo \
-            rhysd/actionlint:1.7.12 -color
+          uv run --locked python scripts/lint_workflows.py
           shellcheck scripts/*.sh
 
   test:
@@ -42,9 +48,12 @@ jobs:
           python-version: ${{ matrix.python }}
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - run: uv sync --locked
-      - run: uv run --locked ruff check tests
-      - run: uv run --locked ruff format --check tests
-      - run: uv run --locked ty check tests
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: actionlint@1.7.12
+      - run: uv run --locked ruff check scripts tests
+      - run: uv run --locked ruff format --check scripts tests
+      - run: uv run --locked ty check scripts tests
       - run: uv run --locked pytest
 
   smoke:

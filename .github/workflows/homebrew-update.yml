@@ -1,13 +1,11 @@
-# 🍺 Homebrew Update — shared-workflows
-# Updates the Homebrew formula in hyperb1iss/homebrew-tap.
-
+# Update a Homebrew formula from the caller's release artifacts.
 name: Homebrew Update
 
 on:
   workflow_call:
     inputs:
       formula-name:
-        description: 'Formula name (e.g., git-iris or unifly)'
+        description: 'Lowercase, hyphen-separated formula name'
         type: string
         required: true
       tap-repo:
@@ -26,124 +24,183 @@ on:
         description: 'Space-separated binaries to install'
         type: string
         required: true
+      license:
+        description: 'SPDX license identifier'
+        type: string
+        default: 'Apache-2.0'
     secrets:
       HOMEBREW_TAP_TOKEN:
         required: true
 
-# The checksum step uploads tarballs to the caller's own release.
 permissions:
   contents: write
-
-concurrency:
-  group: homebrew
-  cancel-in-progress: false
+  actions: read
 
 jobs:
   update-formula:
     runs-on: ubuntu-latest
     steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: 'binaries-*'
-          path: artifacts/
-          merge-multiple: false
-
-      - name: Compute checksums and upload tarballs
-        id: checksums
+      - name: Prepare formula and release archives
         env:
           GH_TOKEN: ${{ github.token }}
-          FORMULA_NAME: ${{ inputs.formula-name }}
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          for target in linux-amd64 macos-arm64; do
-            dir="artifacts/binaries-$target"
-            if [ -d "$dir" ]; then
-              tarball="${FORMULA_NAME}-${version}-${target}.tar.gz"
-              tar -czf "$tarball" -C "$dir" .
-              sha=$(sha256sum "$tarball" | cut -d' ' -f1)
-              echo "${target//-/_}_sha=$sha" >> "$GITHUB_OUTPUT"
-
-              # Upload tarball as release asset
-              gh release upload "v${version}" "$tarball" \
-                --repo "${{ github.repository }}" --clobber
-              echo "✅ $target: $sha (uploaded)"
-            fi
-          done
-
-      - name: Generate formula
-        env:
           FORMULA_NAME: ${{ inputs.formula-name }}
           FORMULA_DESC: ${{ inputs.description }}
           FORMULA_HOMEPAGE: ${{ inputs.homepage }}
           BINARY_NAMES: ${{ inputs.binary-names }}
-          VERSION: ${{ steps.checksums.outputs.version }}
-          REPO: ${{ github.repository }}
-          MACOS_SHA: ${{ steps.checksums.outputs.macos_arm64_sha }}
-          LINUX_SHA: ${{ steps.checksums.outputs.linux_amd64_sha }}
+          FORMULA_LICENSE: ${{ inputs.license }}
         run: |
-          # Convert formula-name to CamelCase Ruby class name
-          # e.g., git-iris -> GitIris, unifly -> Unifly
-          class_name=$(echo "$FORMULA_NAME" | sed -E 's/(^|-)([a-z])/\U\2/g')
+          python3 <<'PY'
+          import gzip
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tarfile
 
-          # Build binaries array for Ruby
-          binaries=$(echo "$BINARY_NAMES" | tr ' ' '\n' | sed 's/.*/"&"/' | paste -sd', ' -)
-          first_binary=$(echo "$BINARY_NAMES" | cut -d' ' -f1)
+          name = os.environ["FORMULA_NAME"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag.removeprefix("v")
+          binaries = os.environ["BINARY_NAMES"].split()
+          if not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", name):
+              raise SystemExit("Invalid formula name")
+          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+              raise SystemExit("Homebrew requires a stable semantic version tag")
+          if not binaries or len(set(binaries)) != len(binaries) or any(
+              not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", binary) for binary in binaries
+          ):
+              raise SystemExit("Provide distinct, safe binary filenames")
+          for key in ("FORMULA_DESC", "FORMULA_HOMEPAGE", "FORMULA_LICENSE"):
+              if not os.environ[key] or any(ord(char) < 32 for char in os.environ[key]):
+                  raise SystemExit(f"Invalid {key}")
+          if not os.environ["FORMULA_HOMEPAGE"].startswith("https://"):
+              raise SystemExit("Homepage must use HTTPS")
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run = os.environ["GITHUB_RUN_ID"]
+          endpoint = f"repos/{repo}/actions/runs/{run}/artifacts"
+          pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", endpoint], text=True))
+          available = {a["name"]: a for page in pages for a in page["artifacts"]}
+          archives = []
+          for target in ("linux-amd64", "macos-arm64"):
+              artifact_name = f"binaries-{target}"
+              if artifact_name not in available:
+                  continue
+              if available[artifact_name]["expired"]:
+                  raise SystemExit(f"Expired artifact: {artifact_name}")
+              directory = Path("artifacts") / artifact_name
+              subprocess.run(["gh", "run", "download", run, "--repo", repo,
+                              "--name", artifact_name, "--dir", str(directory)], check=True)
+              packed = directory / f"{artifact_name}.tar.gz"
+              if not packed.is_file() or packed.is_symlink() or list(directory.iterdir()) != [packed]:
+                  raise SystemExit(f"Expected only {artifact_name}.tar.gz in artifact")
+              payload = directory / "payload"
+              with tarfile.open(packed) as archive:
+                  archive.extractall(payload, filter="data")
+              directory = payload
+              for binary in binaries:
+                  path = directory / binary
+                  if not path.is_file() or path.is_symlink():
+                      raise SystemExit(f"Missing regular binary: {path}")
+                  path.chmod(0o755)
+              archive_path = Path(f"{name}-{version}-{target}.tar.gz")
+              def normalize(member):
+                  member.mtime = 0
+                  member.uid = member.gid = 0
+                  member.uname = member.gname = ""
+                  return member
+              with archive_path.open("wb") as raw:
+                  with gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as compressed:
+                      with tarfile.open(fileobj=compressed, mode="w") as archive:
+                          archive.add(directory, arcname=".", filter=normalize)
+              checksum = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+              archives.append((target, archive_path, checksum))
+          if not archives:
+              raise SystemExit("No supported binary artifacts found")
 
-          cat > formula.rb << RUBY
-          class ${class_name} < Formula
-            desc "${FORMULA_DESC}"
-            homepage "${FORMULA_HOMEPAGE}"
-            version "${VERSION}"
-            license "Apache-2.0"
+          # Single-quoted Ruby literals avoid interpolation of caller-provided prose.
+          def ruby(value):
+              return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/${REPO}/releases/download/v${VERSION}/${FORMULA_NAME}-${VERSION}-macos-arm64.tar.gz"
-                sha256 "${MACOS_SHA}"
-              end
-            end
+          class_name = "".join(part.capitalize() for part in name.split("-"))
+          lines = [f"class {class_name} < Formula",
+                   f"  desc {ruby(os.environ['FORMULA_DESC'])}",
+                   f"  homepage {ruby(os.environ['FORMULA_HOMEPAGE'])}",
+                   f"  version {ruby(version)}",
+                   f"  license {ruby(os.environ['FORMULA_LICENSE'])}"]
+          for target, archive_path, checksum in archives:
+              platform, cpu = ("linux", "intel") if target == "linux-amd64" else ("macos", "arm")
+              url = f"https://github.com/{repo}/releases/download/{tag}/{archive_path.name}"
+              lines.extend(["", f"  on_{platform} do", f"    if Hardware::CPU.{cpu}?",
+                            f"      url {ruby(url)}", f"      sha256 {ruby(checksum)}",
+                            "    end", "  end"])
+          lines.extend(["", "  def install",
+                        f"    [{', '.join(map(ruby, binaries))}].each {{ |b| bin.install b }}",
+                        '    share.install Dir["share/*"] if Dir.exist?("share")',
+                        '    etc.install Dir["etc/*"] if Dir.exist?("etc")',
+                        "  end", "", "  test do",
+                        f"    system bin/{ruby(binaries[0])}, '--version'", "  end", "end", ""])
+          Path("formula.rb").write_text("\n".join(lines))
+          # Existing assets are immutable: a failed tap update must leave every
+          # previously published formula checksum valid.
+          release = json.loads(subprocess.check_output(
+              ["gh", "release", "view", tag, "--repo", repo, "--json", "assets"], text=True))
+          existing = {asset["name"] for asset in release["assets"]}
+          pending = []
+          for _, archive_path, checksum in archives:
+              if archive_path.name in existing:
+                  destination = Path("existing-assets")
+                  subprocess.run(["gh", "release", "download", tag, "--repo", repo,
+                                  "--pattern", archive_path.name, "--dir", str(destination)], check=True)
+                  published = destination / archive_path.name
+                  if hashlib.sha256(published.read_bytes()).hexdigest() != checksum:
+                      raise SystemExit(f"Existing release asset differs: {archive_path.name}; publish a new version")
+              else:
+                  pending.append(archive_path)
+          for archive_path in pending:
+              subprocess.run(["gh", "release", "upload", tag, str(archive_path),
+                              "--repo", repo], check=True)
+          PY
 
-            on_linux do
-              if Hardware::CPU.intel?
-                url "https://github.com/${REPO}/releases/download/v${VERSION}/${FORMULA_NAME}-${VERSION}-linux-amd64.tar.gz"
-                sha256 "${LINUX_SHA}"
-              end
-            end
-
-            def install
-              [${binaries}].each { |b| bin.install b }
-              # Optional support payloads — shipped by projects that need them
-              # (terminfo, shell integration, man pages, themes, completions).
-              # Absent for simple binary-only projects; safely skipped.
-              share.install Dir["share/*"] if Dir.exist?("share")
-              etc.install Dir["etc/*"] if Dir.exist?("etc")
-            end
-
-            test do
-              system bin/"${first_binary}", "--version"
-            end
-          end
-          RUBY
-
-          # Strip leading whitespace from heredoc indentation
-          sed -i 's/^          //' formula.rb
-          cat formula.rb
-
-      - name: Push formula to tap
+      - name: Update formula in tap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           FORMULA_NAME: ${{ inputs.formula-name }}
           TAP_REPO: ${{ inputs.tap-repo }}
-          VERSION: ${{ steps.checksums.outputs.version }}
         run: |
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
-          cp formula.rb "tap/Formula/${FORMULA_NAME}.rb"
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "Formula/${FORMULA_NAME}.rb"
-          git commit -m "Update ${FORMULA_NAME} to ${VERSION}"
-          git push
+          python3 <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          repo = os.environ["TAP_REPO"]
+          name = os.environ["FORMULA_NAME"]
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+              raise SystemExit("Invalid tap repository")
+          endpoint = f"repos/{repo}/contents/Formula/{name}.rb"
+          result = subprocess.run(["gh", "api", endpoint], capture_output=True, text=True)
+          payload = {"message": f"Update {name} to {os.environ['GITHUB_REF_NAME']}",
+                     "content": base64.b64encode(Path("formula.rb").read_bytes()).decode()}
+          if result.returncode == 0:
+              existing = json.loads(result.stdout)
+              old = base64.b64decode(existing["content"])
+              new = Path("formula.rb").read_bytes()
+              if old == new:
+                  print("Formula is already current")
+                  raise SystemExit(0)
+              def version(content):
+                  match = re.search(rb"\bversion\s+['\"](\d+)\.(\d+)\.(\d+)['\"]", content)
+                  if not match:
+                      raise SystemExit("Cannot safely compare formula version")
+                  return tuple(map(int, match.groups()))
+              if version(old) > version(new):
+                  raise SystemExit("Refusing to replace a newer formula")
+              payload["sha"] = existing["sha"]
+          elif "HTTP 404" not in result.stderr:
+              raise SystemExit(result.stderr)
+          subprocess.run(["gh", "api", "--method", "PUT", endpoint, "--input", "-"],
+                         input=json.dumps(payload), text=True, check=True)
+          PY

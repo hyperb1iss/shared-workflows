@@ -1,11 +1,13 @@
-# 🎯 GitHub Release — shared-workflows
-# Creates a GitHub Release with AI-generated notes via git-iris.
-
+# GitHub Release with generated notes and platform-specific archives.
 name: GitHub Release
 
 on:
   workflow_call:
     inputs:
+      tag:
+        description: 'Release tag (empty = caller ref name); must be a semantic version'
+        type: string
+        default: ''
       release-notes-model:
         description: 'AI model for git-iris'
         type: string
@@ -15,13 +17,13 @@ on:
         type: string
         default: 'anthropic'
       attach-artifacts:
-        description: 'Download + attach build artifacts'
+        description: 'Download and attach one archive per build artifact'
         type: boolean
         default: false
       artifact-pattern:
-        description: 'Glob for which artifacts to attach'
+        description: 'Glob for build artifact names to archive'
         type: string
-        default: '*'
+        default: 'binaries-*'
       release-notes-run-id:
         description: 'Use pre-generated notes from this run'
         type: string
@@ -31,28 +33,52 @@ on:
         type: boolean
         default: false
 
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+
 permissions:
   contents: write
   actions: read
 
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+
+      - name: Validate release tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo '::error::Release tag must be a semantic version.'
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          version="${RELEASE_TAG#v}"
+          version="${version%%+*}"
+          if [[ "$version" == *-* ]]; then
+            echo 'prerelease=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'prerelease=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Get previous tag
         id: prev-tag
         run: |
-          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
           if [ -z "$prev" ]; then
-            prev=$(git rev-list --max-parents=0 HEAD)
+            prev=$(git rev-list --max-parents=0 HEAD | head -1)
           fi
           echo "tag=$prev" >> "$GITHUB_OUTPUT"
 
@@ -61,20 +87,25 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: release-notes
-          path: .
+          path: release-notes/
           run-id: ${{ inputs.release-notes-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Normalize release notes filename
         if: inputs.release-notes-run-id != ''
         run: |
-          # Normalize to RELEASE_NOTES.md regardless of source filename
+          found=false
           for f in release_notes.md release-notes.md RELEASE_NOTES.md; do
-            if [ -f "$f" ] && [ "$f" != "RELEASE_NOTES.md" ]; then
-              mv "$f" RELEASE_NOTES.md
+            if [ -s "release-notes/$f" ]; then
+              cp "release-notes/$f" RELEASE_NOTES.md
+              found=true
               break
             fi
           done
+          if [ "$found" != true ]; then
+            echo '::error::The release-notes artifact contains no supported, nonempty notes file.'
+            exit 1
+          fi
 
       - name: Generate release notes via git-iris
         if: inputs.release-notes-run-id == ''
@@ -82,26 +113,121 @@ jobs:
         with:
           command: release-notes
           from: ${{ steps.prev-tag.outputs.tag }}
-          to: ${{ github.ref_name }}
-          version-name: ${{ github.ref_name }}
+          to: ${{ steps.tag.outputs.tag }}
+          version-name: ${{ steps.tag.outputs.tag }}
           provider: ${{ inputs.release-notes-provider }}
           model: ${{ inputs.release-notes-model }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           output-file: RELEASE_NOTES.md
 
-      - name: Download build artifacts
+      - name: Prepare release archives
         if: inputs.attach-artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_PATTERN: ${{ inputs.artifact-pattern }}
+        run: |
+          python3 <<'PY'
+          import fnmatch
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+          import tarfile
+
+          endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/artifacts"
+          pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", endpoint], text=True))
+          artifacts = [a for page in pages for a in page["artifacts"]
+                       if fnmatch.fnmatchcase(a["name"], os.environ["ARTIFACT_PATTERN"])]
+          if not artifacts or any(a["expired"] for a in artifacts):
+              raise SystemExit("No matching artifacts, or a selected artifact has expired")
+          Path("release-assets").mkdir()
+          for artifact in artifacts:
+              name = artifact["name"]
+              if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+                  raise SystemExit(f"Unsafe artifact name: {name!r}")
+              directory = Path("artifacts") / name
+              subprocess.run(["gh", "run", "download", os.environ["GITHUB_RUN_ID"],
+                              "--repo", os.environ["GITHUB_REPOSITORY"], "--name", name,
+                              "--dir", str(directory)], check=True)
+              if not any(directory.iterdir()):
+                  raise SystemExit(f"Empty artifact: {name}")
+              destination = Path("release-assets") / f"{name}.tar.gz"
+              packed = directory / f"{name}.tar.gz"
+              if packed.is_file() and not packed.is_symlink() and list(directory.iterdir()) == [packed]:
+                  with tarfile.open(packed) as archive:
+                      if not archive.getmembers():
+                          raise SystemExit(f"Empty archive: {packed}")
+                  shutil.copyfile(packed, destination)
+              elif name.startswith("binaries-"):
+                  raise SystemExit(f"Expected {name}.tar.gz inside binary artifact")
+              else:
+                  with tarfile.open(destination, "w:gz") as archive:
+                      archive.add(directory, arcname=".")
+          PY
+
+      - name: Identify release bundle
+        id: bundle
+        run: echo "id=$(cat /proc/sys/kernel/random/uuid)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release bundle
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: github-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.bundle.outputs.id }}
+          path: |
+            RELEASE_NOTES.md
+            release-assets/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # GitHub exposes one mutable latest-release pointer per repository.
+    concurrency:
+      group: shared-github-release-pointer
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Download release bundle
         uses: actions/download-artifact@v8
         with:
-          pattern: ${{ inputs.artifact-pattern }}
-          path: artifacts/
-          merge-multiple: true
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: .
+
+      - name: Determine latest release eligibility
+        id: latest
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          test -s RELEASE_NOTES.md
+          git fetch origin --tags
+          version="${RELEASE_TAG#v}"
+          version="${version%%+*}"
+          newest=$(git tag -l | sed 's/^v//' | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z.-]+)?$' | cut -d+ -f1 | sort -V | tail -1 || true)
+          if [ "$PRERELEASE" = false ] && [ "$DRAFT" = false ] && [ "$version" = "$newest" ]; then
+            echo 'eligible=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Release ${{ needs.prepare.outputs.tag }}
           draft: ${{ inputs.draft }}
-          prerelease: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.latest.outputs.eligible }}
           body_path: RELEASE_NOTES.md
-          files: ${{ inputs.attach-artifacts && 'artifacts/*' || '' }}
+          files: ${{ inputs.attach-artifacts && 'release-assets/*.tar.gz' || '' }}
+          fail_on_unmatched_files: true
