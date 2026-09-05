@@ -61,8 +61,31 @@ jobs:
     with:
       working-directory: tests/fixtures/bun
 
+  python-smoke:
+    uses: ./.github/workflows/python-build.yml
+    with:
+      package-dir: tests/fixtures/python
+
+  verify-python-smoke:
+    needs: python-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.python-smoke.outputs.artifact-name }}
+          path: dists/
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Install the built wheel without source checkout
+        run: |
+          uv venv
+          uv pip install --python .venv/bin/python --no-index dists/*.whl
+          test "$(.venv/bin/workflow-fixture)" = 'Installed the shared workflow distribution'
+
   promote:
-    needs: [lint, test, smoke]
+    needs: [lint, test, smoke, python-smoke, verify-python-smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
