@@ -42,6 +42,15 @@ def run_inline(name, cwd, **env):
     return result, values
 
 
+def test_release_notes_support_both_caller_filenames(tmp_path):
+    (tmp_path / "release_notes.md").write_text("Release notes\n")
+    alias = step("rust-release.yml", "Prepare release notes aliases")
+    subprocess.run(["bash", "-e", "-c", alias["run"]], cwd=tmp_path, check=True)
+    upload = step("rust-release.yml", "Upload release notes artifact")
+    for filename in upload["with"]["path"].splitlines():
+        assert (tmp_path / filename).read_text() == "Release notes\n"
+
+
 def git(cwd, *args):
     return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()
 

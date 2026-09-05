@@ -398,12 +398,18 @@ jobs:
           model: ${{ inputs.release-notes-model }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
+      - name: Prepare release notes aliases
+        if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
+        run: cp release_notes.md RELEASE_NOTES.md
+
       - name: Upload release notes artifact
         if: ${{ !inputs.dry_run && inputs.generate-release-notes }}
         uses: actions/upload-artifact@v7
         with:
           name: release-notes
-          path: release_notes.md
+          path: |
+            release_notes.md
+            RELEASE_NOTES.md
           if-no-files-found: error
           overwrite: true
 
