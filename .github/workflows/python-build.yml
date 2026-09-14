@@ -45,7 +45,7 @@ jobs:
           ref: ${{ inputs.checkout-ref || github.ref }}
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
