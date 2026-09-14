@@ -23,7 +23,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run format:check
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: '3.13'
           enable-cache: false
@@ -44,7 +44,7 @@ jobs:
         python: ['3.13', '3.14']
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: ${{ matrix.python }}
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -76,7 +76,7 @@ jobs:
         with:
           name: ${{ needs.python-smoke.outputs.artifact-name }}
           path: dists/
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: '3.13'
           enable-cache: false
