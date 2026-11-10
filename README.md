@@ -365,13 +365,22 @@ Creates a GitHub Release with AI-generated notes from
 | `release-notes-provider` | string  | `'anthropic'`     | LLM provider                                    |
 | `attach-artifacts`       | boolean | `false`           | Attach build artifacts                          |
 | `artifact-pattern`       | string  | `'binaries-*'     | Glob for artifacts to attach                    |
+| `artifact-mode`          | string  | `'archives'`      | One archive per artifact, or direct `files`     |
 | `release-notes-run-id`   | string  | `''`              | Use pre-generated notes from run                |
 | `draft`                  | boolean | `false`           | Create as draft release                         |
 
 The default artifact pattern selects binary builds. Set `artifact-pattern` explicitly to include
 other artifacts. Binary archives pass through unchanged; other selected artifacts are packaged as
-separate archive assets. The release retains target names and executable modes. Prerelease tags are
-marked as prereleases; stable releases only become latest when their version is newest.
+separate archive assets. The release retains target names and executable modes.
+
+Set `artifact-mode: files` to publish installers, wheels, checksums, and other downloads with their
+original filenames and bytes. Each selected artifact must contain only top-level regular files, with
+names beginning with a letter or digit and containing only letters, digits, dots, underscores, plus
+signs, or hyphens. Names must not end with a dot (GitHub renames those uploads). Duplicate filenames
+across artifacts, directories, and symlinks fail preparation before the release is published.
+
+Prerelease tags are marked as prereleases; stable releases only become latest when their version is
+newest.
 
 ### homebrew-update.yml
 

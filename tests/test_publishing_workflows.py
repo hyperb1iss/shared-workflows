@@ -43,7 +43,7 @@ if args[:1] == ['api'] and '--slurp' in args:
     print(json.dumps([{'artifacts': [{'name': p.name, 'expired': False} for p in root.iterdir()]}]))
 elif args[:2] == ['run', 'download']:
     name = args[args.index('--name') + 1]
-    shutil.copytree(root / name, args[args.index('--dir') + 1])
+    shutil.copytree(root / name, args[args.index('--dir') + 1], symlinks=True)
 elif args[:1] == ['api'] and '--method' in args:
     print(sys.stdin.read())
 elif args[:1] == ['api']:
@@ -85,6 +85,7 @@ else:
         "FORMULA_LICENSE": "MIT",
         "BINARY_NAMES": "one two three",
         "ARTIFACT_PATTERN": "binaries-*",
+        "ARTIFACT_MODE": "archives",
     }
     return work, fixtures, commands, env
 
@@ -169,7 +170,7 @@ def test_homebrew_no_artifacts_fails(sandbox):
 def test_release_preserves_target_archives_and_executable_mode(sandbox):
     for target in ("linux-amd64", "linux-arm64", "macos-arm64"):
         artifact(sandbox[1], target)
-    result = run(sandbox, "github-release", "Prepare release archives")
+    result = run(sandbox, "github-release", "Prepare release assets")
     assert result.returncode == 0, result.stderr
     archives = list((sandbox[0] / "release-assets").iterdir())
     assert len(archives) == 3
@@ -183,7 +184,7 @@ def test_release_preserves_target_archives_and_executable_mode(sandbox):
 
 
 def test_release_missing_artifacts_fails(sandbox):
-    result = run(sandbox, "github-release", "Prepare release archives")
+    result = run(sandbox, "github-release", "Prepare release assets")
     assert result.returncode != 0
     assert "No matching artifacts" in result.stderr
 
@@ -192,9 +193,111 @@ def test_release_rejects_raw_binary_contract(sandbox):
     directory = sandbox[1] / "binaries-linux-amd64"
     directory.mkdir()
     (directory / "one").write_text("raw")
-    result = run(sandbox, "github-release", "Prepare release archives")
+    result = run(sandbox, "github-release", "Prepare release assets")
     assert result.returncode != 0
     assert "Expected binaries-linux-amd64.tar.gz" in result.stderr
+
+
+def test_release_direct_files_preserve_download_names_and_bytes(sandbox):
+    payloads = {
+        "install.sh": b"#!/bin/sh\necho install\n",
+        "example-1.2.3+local-py3-none-any.whl": b"wheel bytes\x00\xff",
+        "example-1.2.3.tar.gz": b"source archive bytes",
+        "example.rb": b"class Example < Formula\nend\n",
+        "SHA256SUMS": b"checksums\n",
+    }
+    for index, (name, payload) in enumerate(payloads.items()):
+        directory = sandbox[1] / f"distributions-{index}"
+        directory.mkdir()
+        (directory / name).write_bytes(payload)
+    result = run(
+        sandbox,
+        "github-release",
+        "Prepare release assets",
+        ARTIFACT_MODE="files",
+        ARTIFACT_PATTERN="distributions-*",
+    )
+    assert result.returncode == 0, result.stderr
+    assets = sandbox[0] / "release-assets"
+    assert {path.name: path.read_bytes() for path in assets.iterdir()} == payloads
+
+
+def test_release_direct_files_reject_duplicate_names(sandbox):
+    for index in range(2):
+        directory = sandbox[1] / f"distributions-{index}"
+        directory.mkdir()
+        (directory / "SHA256SUMS").write_text(str(index))
+    result = run(
+        sandbox,
+        "github-release",
+        "Prepare release assets",
+        ARTIFACT_MODE="files",
+        ARTIFACT_PATTERN="distributions-*",
+    )
+    assert result.returncode != 0
+    assert "Duplicate release asset: SHA256SUMS" in result.stderr
+
+
+@pytest.mark.parametrize("entry", ["directory", "symlink", "unsafe-name", "trailing-dot"])
+def test_release_direct_files_reject_invalid_entries(sandbox, entry):
+    directory = sandbox[1] / "distributions"
+    directory.mkdir()
+    if entry == "directory":
+        (directory / "nested").mkdir()
+    elif entry == "symlink":
+        (directory / "link").symlink_to("/etc/passwd")
+    elif entry == "trailing-dot":
+        (directory / "installer.").write_text("payload")
+    else:
+        (directory / "unsafe\nname").write_text("payload")
+    result = run(
+        sandbox,
+        "github-release",
+        "Prepare release assets",
+        ARTIFACT_MODE="files",
+        ARTIFACT_PATTERN="distributions",
+    )
+    assert result.returncode != 0
+    assert (
+        "Unsafe asset name"
+        if entry in {"unsafe-name", "trailing-dot"}
+        else "Expected a regular file"
+    ) in result.stderr
+
+
+def test_release_rejects_invalid_mode_before_external_work(sandbox):
+    result = run(sandbox, "github-release", "Prepare release assets", ARTIFACT_MODE="invalid")
+    assert result.returncode != 0
+    assert "artifact-mode must be archives or files" in result.stderr
+    assert not Path(sandbox[3]["COMMAND_LOG"]).exists()
+
+
+def test_release_default_mode_wraps_nonbinary_artifacts(sandbox):
+    directory = sandbox[1] / "distributions"
+    directory.mkdir()
+    (directory / "install.sh").write_text("installer")
+    result = run(
+        sandbox, "github-release", "Prepare release assets", ARTIFACT_PATTERN="distributions"
+    )
+    assert result.returncode == 0, result.stderr
+    with tarfile.open(sandbox[0] / "release-assets/distributions.tar.gz") as archive:
+        content = archive.extractfile("./install.sh")
+        assert content is not None
+        assert content.read() == b"installer"
+
+
+def test_release_bundle_carries_all_assets_by_immutable_id():
+    config = yaml.safe_load((ROOT / ".github/workflows/github-release.yml").read_text())
+    assert config[True]["workflow_call"]["inputs"]["artifact-mode"]["default"] == "archives"
+    prepare = config["jobs"]["prepare"]
+    upload = next(step for step in prepare["steps"] if step.get("id") == "upload")
+    assert upload["with"]["path"].splitlines() == ["RELEASE_NOTES.md", "release-assets/*"]
+    assert prepare["outputs"]["artifact-id"] == "${{ steps.upload.outputs.artifact-id }}"
+    publish = config["jobs"]["publish"]["steps"]
+    download = next(step for step in publish if step.get("name") == "Download release bundle")
+    assert download["with"]["artifact-ids"] == "${{ needs.prepare.outputs.artifact-id }}"
+    release = next(step for step in publish if step.get("name") == "Create GitHub Release")
+    assert release["with"]["files"] == "${{ inputs.attach-artifacts && 'release-assets/*' || '' }}"
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "2.0.0-rc.1", "main"])

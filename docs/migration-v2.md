@@ -73,6 +73,12 @@ binaries. Keeping artifact boundaries preserves platform names and avoids overwr
 filenames from different targets. The default `artifact-pattern` is now `binaries-*`; set a
 different pattern to attach additional package artifacts.
 
+For direct downloads such as installers, wheels, and checksum files, select `artifact-mode: files`
+and set `artifact-pattern` to the caller's distribution artifact. This preserves the original
+filenames and bytes instead of wrapping the artifact in an archive. Selected artifacts must contain
+only top-level regular files with unique, portable filenames. Keep the default `archives` mode for
+platform binaries that need their executable permissions preserved.
+
 The release workflow accepts an explicit `tag` when the caller ref is not the intended release tag.
 Release tags must use `v?X.Y.Z` with optional SemVer prerelease and build metadata. Prereleases are
 marked as such; an older stable release must not replace the newest stable release as latest.
