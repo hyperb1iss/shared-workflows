@@ -1,4 +1,4 @@
-# GitHub Release with generated notes and platform-specific archives.
+# GitHub Release with generated notes and attached assets.
 name: GitHub Release
 
 on:
@@ -17,13 +17,17 @@ on:
         type: string
         default: 'anthropic'
       attach-artifacts:
-        description: 'Download and attach one archive per build artifact'
+        description: 'Download and attach build artifacts'
         type: boolean
         default: false
       artifact-pattern:
-        description: 'Glob for build artifact names to archive'
+        description: 'Glob for build artifact names to attach'
         type: string
         default: 'binaries-*'
+      artifact-mode:
+        description: 'Attachment format: archives (one per artifact) or files (flat regular files)'
+        type: string
+        default: 'archives'
       release-notes-run-id:
         description: 'Use pre-generated notes from this run'
         type: string
@@ -120,11 +124,12 @@ jobs:
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           output-file: RELEASE_NOTES.md
 
-      - name: Prepare release archives
+      - name: Prepare release assets
         if: inputs.attach-artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_PATTERN: ${{ inputs.artifact-pattern }}
+          ARTIFACT_MODE: ${{ inputs.artifact-mode }}
         run: |
           python3 <<'PY'
           import fnmatch
@@ -136,6 +141,9 @@ jobs:
           import subprocess
           import tarfile
 
+          mode = os.environ["ARTIFACT_MODE"]
+          if mode not in {"archives", "files"}:
+              raise SystemExit("artifact-mode must be archives or files")
           endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/artifacts"
           pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", endpoint], text=True))
           artifacts = [a for page in pages for a in page["artifacts"]
@@ -153,6 +161,17 @@ jobs:
                               "--dir", str(directory)], check=True)
               if not any(directory.iterdir()):
                   raise SystemExit(f"Empty artifact: {name}")
+              if mode == "files":
+                  for source in directory.iterdir():
+                      if source.is_symlink() or not source.is_file():
+                          raise SystemExit(f"Expected a regular file: {source}")
+                      if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", source.name):
+                          raise SystemExit(f"Unsafe asset name: {source.name!r}")
+                      destination = Path("release-assets") / source.name
+                      if destination.exists():
+                          raise SystemExit(f"Duplicate release asset: {source.name}")
+                      shutil.copyfile(source, destination)
+                  continue
               destination = Path("release-assets") / f"{name}.tar.gz"
               packed = directory / f"{name}.tar.gz"
               if packed.is_file() and not packed.is_symlink() and list(directory.iterdir()) == [packed]:
@@ -178,7 +197,7 @@ jobs:
           name: github-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.bundle.outputs.id }}
           path: |
             RELEASE_NOTES.md
-            release-assets/*.tar.gz
+            release-assets/*
           if-no-files-found: error
           retention-days: 1
 
@@ -229,5 +248,5 @@ jobs:
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           make_latest: ${{ steps.latest.outputs.eligible }}
           body_path: RELEASE_NOTES.md
-          files: ${{ inputs.attach-artifacts && 'release-assets/*.tar.gz' || '' }}
+          files: ${{ inputs.attach-artifacts && 'release-assets/*' || '' }}
           fail_on_unmatched_files: true
