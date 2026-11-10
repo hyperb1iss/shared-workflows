@@ -376,8 +376,8 @@ separate archive assets. The release retains target names and executable modes.
 Set `artifact-mode: files` to publish installers, wheels, checksums, and other downloads with their
 original filenames and bytes. Each selected artifact must contain only top-level regular files, with
 names beginning with a letter or digit and containing only letters, digits, dots, underscores, plus
-signs, or hyphens. Duplicate filenames across artifacts, directories, and symlinks fail preparation
-before the release is published.
+signs, or hyphens. Names must not end with a dot (GitHub renames those uploads). Duplicate filenames
+across artifacts, directories, and symlinks fail preparation before the release is published.
 
 Prerelease tags are marked as prereleases; stable releases only become latest when their version is
 newest.

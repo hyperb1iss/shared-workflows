@@ -238,7 +238,7 @@ def test_release_direct_files_reject_duplicate_names(sandbox):
     assert "Duplicate release asset: SHA256SUMS" in result.stderr
 
 
-@pytest.mark.parametrize("entry", ["directory", "symlink", "unsafe-name"])
+@pytest.mark.parametrize("entry", ["directory", "symlink", "unsafe-name", "trailing-dot"])
 def test_release_direct_files_reject_invalid_entries(sandbox, entry):
     directory = sandbox[1] / "distributions"
     directory.mkdir()
@@ -246,6 +246,8 @@ def test_release_direct_files_reject_invalid_entries(sandbox, entry):
         (directory / "nested").mkdir()
     elif entry == "symlink":
         (directory / "link").symlink_to("/etc/passwd")
+    elif entry == "trailing-dot":
+        (directory / "installer.").write_text("payload")
     else:
         (directory / "unsafe\nname").write_text("payload")
     result = run(
@@ -257,7 +259,9 @@ def test_release_direct_files_reject_invalid_entries(sandbox, entry):
     )
     assert result.returncode != 0
     assert (
-        "Unsafe asset name" if entry == "unsafe-name" else "Expected a regular file"
+        "Unsafe asset name"
+        if entry in {"unsafe-name", "trailing-dot"}
+        else "Expected a regular file"
     ) in result.stderr
 
 

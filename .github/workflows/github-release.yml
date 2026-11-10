@@ -165,7 +165,7 @@ jobs:
                   for source in directory.iterdir():
                       if source.is_symlink() or not source.is_file():
                           raise SystemExit(f"Expected a regular file: {source}")
-                      if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", source.name):
+                      if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", source.name) or source.name.endswith("."):
                           raise SystemExit(f"Unsafe asset name: {source.name!r}")
                       destination = Path("release-assets") / source.name
                       if destination.exists():
